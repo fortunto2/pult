@@ -64,6 +64,8 @@ export interface Extension<X = object> {
   fence?(ctx: AppCtx<X>, update: Update): boolean | Promise<boolean>;
   /** The owner's plain private message, before it becomes a session turn: claim intake, a rest/hold mode, a relayed answer, a keyboard-button text. Return true when handled (nothing is queued); false leaves it to the next extension and then the core. */
   ownerMessage?(c: MessageCtx<X>): Promise<boolean>;
+  /** Another credential for part of the API: a home device that may lease only its own events, say. Runs on every request after the Mini App and extension routes and before the core's key check; return a Response to answer, or null to fall through to the normal key check. The extension does its own comparison (use `sameKey`). */
+  keyed?(req: Request, ctx: AppCtx<X>): Promise<Response | null>;
   eventColumns?: Record<string, string | number | null>;   // values for extra columns your migrations added to `events` that have no default (written on every core insert)
   help?: string;                                  // a line appended to /help
 }

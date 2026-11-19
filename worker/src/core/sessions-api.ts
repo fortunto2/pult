@@ -2,7 +2,7 @@
 import { mdToTg } from './mdtg.ts';
 import { MAX_FILE } from './chat.ts';
 import type { Env } from './env.ts';
-import { beat, clearLiveSeen, depth, finish, getEvent, pull, recordLiveSeen, type QEvent } from './queue.ts';
+import { beat, clearLiveSeen, depth, finish, getEvent, noteSeen, pull, recordLiveSeen, type QEvent } from './queue.ts';
 import { reconcile } from './reconcile.ts';
 import { applyAction, applyUnwork, getItem } from './store.ts';
 import { clearKeyedMessage, getSetting, keyedMessage, pausedUntil, setKeyedMessage, setPause } from './settings.ts';
@@ -33,6 +33,7 @@ export async function sessionsRoute(req: Request, u: URL, env: Env, deps: { tg: 
       return json({ event: await pull(env.DB, 'live', now, s.id), paused_until: null });   // delivery costs no model run, so the usage-limit pause does not hold it
     }
     const slot = pb.slot === 'background' ? 'background' : 'interactive';
+    await noteSeen(env.DB, slot, now);
     const paused = await pausedUntil(env.DB, now);
     // under the usage limit nothing is leased: messages wait in the queue and run after the reset
     return json({ event: paused ? null : await pull(env.DB, slot, now), paused_until: paused });

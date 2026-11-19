@@ -245,6 +245,7 @@ export function createApp<X extends object = object>(opts: AppOptions<X> = {}): 
       if (app) return app;
       const ex = await extRoute(req, u, env, ctx);
       if (ex) return ex;
+      for (const e of exts) { const k = e.keyed ? await e.keyed(req, ctx).catch(err => { console.error(`extension ${e.name}: keyed failed`, err); return null; }) : null; if (k) return k; }
       // everything else wants the key, in the header only: a key in a URL lands in logs and history
       const key = /^Bearer (.+)$/.exec(req.headers.get('Authorization') ?? '')?.[1] ?? '';
       const isRunner = !!env.RUNNER_KEY && isQueuePath(u.pathname) && await sameKey(key, env.RUNNER_KEY);   // RUNNER_KEY opens the queue routes and nothing else

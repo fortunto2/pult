@@ -10,7 +10,7 @@ export const LEASE_MS = 90_000, EXPIRE_MS = 24 * 3600e3, MAX_ATTEMPTS = 3;
 export type Slot = 'interactive' | 'background' | 'live';
 
 /** What an extension may change about the queue. The SQL fragments run against `events` and are the extension's own responsibility: build them from numbers and constants, never from request text. */
-export interface PullArgs { now: number; args: Record<string, unknown> }
+export interface PullArgs { now: number; args: Record<string, unknown>; db: D1Database }
 export interface QueueHooks {
   /** Slots of its own (`pull(db, '<name>', ...)`). `where` returns the predicate for events this slot may lease, or null for "nothing now"; `gate` can refuse the whole pull (one concurrent lease, a failure window). */
   slots?: { name: string; where(a: PullArgs): string | null | Promise<string | null>; gate?(db: D1Database, a: PullArgs): Promise<boolean>; leaseMs?: number }[];
@@ -20,10 +20,14 @@ export interface QueueHooks {
   lease?(row: Record<string, unknown>): { ms: number; maxMs?: number } | null;
   /** Runs first in every recovery pass, while the dead leases are still `running`: the place to mark who lost them. */
   beforeRecover?(db: D1Database, now: number): Promise<void>;
+  /** Called on every pull of a core slot ('interactive', 'background') by the runner route, before the usage-limit pause is looked at: proof of life of a consumer. Never throws into the pull. */
+  seen?(db: D1Database, slot: string, now: number): Promise<void>;
   /** Queued events matching `where` live `ms` instead of the default day. */
   expiry?: { where: string; ms: number }[];
 }
 let hooks: QueueHooks[] = [];
+/** The runner route calls this on each pull of a core slot; extensions' `seen` hooks see it. */
+export const noteSeen = async (db: D1Database, slot: string, now: number) => { for (const h of hooks) await h.seen?.(db, slot, now).catch(() => undefined); };
 export const setQueueHooks = (h: QueueHooks[]) => { hooks = [...h]; };
 
 // A live session (Claude Code in a terminal with the Telegram channel, bin/tg-channel) is ATTACHED while its settings row LIVE_SEEN:<session> is younger than LIVE_FRESH_MS.
@@ -64,7 +68,7 @@ export async function recover(db: D1Database, now: number) {
 
 export async function pull(db: D1Database, slot: Slot | (string & {}), now: number, liveSession?: string, args: Record<string, unknown> = {}): Promise<QEvent | null> {
   await recover(db, now);
-  const a: PullArgs = { now, args }, core = slot === 'interactive' || slot === 'background' || slot === 'live';
+  const a: PullArgs = { now, args, db }, core = slot === 'interactive' || slot === 'background' || slot === 'live';
   const own = core ? undefined : hooks.flatMap(h => h.slots ?? []).find(x => x.name === slot);
   if (!core && !own) return null;
   if (slot === 'live' && !liveSession) return null;
