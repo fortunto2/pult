@@ -5,7 +5,7 @@ import type { Env } from './env.ts';
 import { beat, clearLiveSeen, depth, finish, getEvent, pull, recordLiveSeen, type QEvent } from './queue.ts';
 import { reconcile } from './reconcile.ts';
 import { applyAction, applyUnwork, getItem } from './store.ts';
-import { clearKeyedMessage, keyedMessage, pausedUntil, setKeyedMessage, setPause } from './settings.ts';
+import { clearKeyedMessage, getSetting, keyedMessage, pausedUntil, setKeyedMessage, setPause } from './settings.ts';
 import { clearTarget, getSession, liveSession, recordMsg, setClaudeId } from './sessions.ts';
 import type { Tg } from './tg.ts';
 
@@ -64,7 +64,7 @@ export async function sessionsRoute(req: Request, u: URL, env: Env, deps: { tg: 
     const b = await body();
     const draftId = Number(b.draft_id);
     if (!Number.isInteger(draftId) || draftId === 0) return json({ error: 'draft_id: non-zero integer' }, 400);
-    if (env.PROGRESS_DRAFTS === '0' || !deps.tg.draft) return json({ ok: false, fallback: true });
+    if (env.PROGRESS_DRAFTS === '0' || !deps.tg.draft || (await getSetting(env.DB, 'PROGRESS_DRAFT')) === '0') return json({ ok: false, fallback: true });
     try { await deps.tg.draft(s.user_id, draftId, String(b.text ?? ''), b.can_stop !== false); return json({ ok: true }); }
     catch (e) { console.error('draft refused', String((e as Error).message ?? e).slice(0, 200)); return json({ ok: false, fallback: true }); }   // client or API without drafts, a rate limit, a group chat: the edit path carries on
   }

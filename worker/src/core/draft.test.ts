@@ -47,6 +47,7 @@ test('stopped_message_generation stops exactly the turn whose event id was the d
   assert.equal((await e.DB.prepare('SELECT stop_requested s FROM events WHERE id = ?').bind(id).first<{ s: number }>())?.s, 0, 'a stranger\'s chat is ignored');
   assert.equal((await upd(OWNER)).status, 200);
   assert.equal((await e.DB.prepare('SELECT stop_requested s FROM events WHERE id = ?').bind(id).first<{ s: number }>())?.s, 1);
+  assert.match(String(stub.calls.filter(c => c.method === 'sendMessage').at(-1)?.body.text), /^Stopping/, 'the tap is answered with a silent line');
   const beat = await (await hit(e, `/events/${id}/beat`, { lease_id: 'L' })).json() as any;
   assert.equal(beat.stop, true, 'the runner sees it on the next heartbeat, as with /stop');
 });
@@ -79,4 +80,12 @@ test('Done carries the card urgency: now red, today blue, week green', () => {
     const rows = keyboard(item({ urgency })).inline_keyboard.flat() as { text: string; style?: string }[];
     assert.equal(rows.find(b => /Done/.test(b.text))?.style, style);
   }
+});
+
+test('the D1 switch PROGRESS_DRAFT=0 turns streamed drafts off without a deploy; a deploy variable cannot override the row back on', async () => {
+  const e = env(); await session(e);
+  await e.DB.prepare("INSERT INTO settings (key, value, at) VALUES ('PROGRESS_DRAFT', '0', 1)").run();
+  assert.deepEqual(await (await hit(e, '/sessions/s1/draft', { draft_id: 1, text: 'x' })).json(), { ok: false, fallback: true });
+  await e.DB.prepare("UPDATE settings SET value = '1' WHERE key = 'PROGRESS_DRAFT'").run();
+  assert.deepEqual(await (await hit(e, '/sessions/s1/draft', { draft_id: 1, text: 'x' })).json(), { ok: true });
 });

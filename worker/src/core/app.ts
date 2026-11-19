@@ -18,6 +18,7 @@ import { listItems } from './store.ts';
 import { grammyTg } from './tg.ts';
 import { ownerTz } from './tz.ts';
 import { S, setStrings } from './strings.ts';
+import { say, type SayBody } from './say.ts';
 import { setEventColumns, setQueueHooks, type QEvent } from './queue.ts';
 
 const COMMANDS = [
@@ -89,7 +90,10 @@ export function createApp<X extends object = object>(opts: AppOptions<X> = {}): 
     b.use(async (ctx, next) => {
       const g = (ctx.update as { stopped_message_generation?: { chat?: { id?: number }; draft_id?: number } }).stopped_message_generation;
       if (!g) return next();
-      if (g.chat?.id === owner) await stopDraft(env, owner, g.draft_id, Date.now(), tz);
+      if (g.chat?.id === owner) {   // the line is said back silently: a tap on Stop should be answered
+        const line = await stopDraft(env, owner, g.draft_id, Date.now(), tz).catch(() => '');
+        if (line) await ctx.api.sendMessage(owner, line, { disable_notification: true }).catch(() => undefined);
+      }
     });
     // An extension may fence updates off before anything else looks at them (business connections, bots, an experiment).
     b.use(async (ctx, next) => {
@@ -180,17 +184,6 @@ export function createApp<X extends object = object>(opts: AppOptions<X> = {}): 
     });
   }
 
-  /** POST /say: one plain message to the owner (bot-say). `silent` sends without a notification; `reply_to` quotes a message. */
-  async function say(req: Request, env: Env, api: Api): Promise<Response> {
-    const b = (await req.json().catch(() => null)) as { text?: string; reply_to?: number; silent?: boolean } | null;
-    if (typeof b?.text !== 'string' || !b.text.trim()) return Response.json({ error: 'text' }, { status: 400 });
-    const m = await api.sendMessage(env.CHAT_ID, b.text.slice(0, 4000), {
-      link_preview_options: { is_disabled: true }, ...(b.silent ? { disable_notification: true } : {}),
-      ...(b.reply_to ? { reply_parameters: { message_id: b.reply_to, allow_sending_without_reply: true } } : {}),
-    });
-    return Response.json({ message_id: m.message_id });
-  }
-
   const onAckOf = (ctx: AppCtx<X>) => async (ev: QEvent, ack: Parameters<NonNullable<NonNullable<Extension<X>['queueActions']>[string]['onAck']>>[2]) => {
     await actions[ev.action]?.onAck?.(ctx, ev, ack);
   };
@@ -256,7 +249,7 @@ export function createApp<X extends object = object>(opts: AppOptions<X> = {}): 
         const r = await sessionsRoute(req, u, env, { tg: ctx.tg, tz: ctx.tz, onAck: onAckOf(ctx), files: { getFile: id => api.getFile(id), download: path => fetch(`${root}/file/bot${env.TELEGRAM_BOT_TOKEN}/${path}`) } });
         if (r) return r;
       }
-      if (req.method === 'POST' && u.pathname === '/say') return say(req, env, api);
+      if (req.method === 'POST' && u.pathname === '/say') return say((await req.json().catch(() => null)) as SayBody | null, ctx, exts.flatMap(e => (e.say ? [e.say] : [])), kb?.reply_markup);
       if (u.pathname.startsWith('/items')) {
         const r = await itemsRoute(req, u, env, ctx.tg, ctx.tz);
         if (r) return r;

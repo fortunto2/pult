@@ -154,3 +154,17 @@ It becomes a tab. A deep link `https://t.me/<bot>/<app>?startapp=panel_pings_3` 
 | Wall display | a `public` or `key` route returning the data the display polls, `panels` for the phone view |
 | Scheduled jobs | `scheduled` for worker-side ticks; Mac-side jobs stay scripts calling `bot-item` and `bot-say`, or plugin actions queued at priority 2 |
 | Draft-send (Gmail and similar) | `callbacks` (the two-tap confirm), `queueActions` with an `onAck` that closes the card, a plugin action holding the send path. The core stays read-and-draft |
+
+## Queue hooks, `/say` hook, switches
+
+`Extension.queue` changes what the Mac runner may lease. All SQL fragments run against `events`; build them from numbers and constants, never from request text.
+
+- `slots: [{ name, where({ now, args }), gate?(db, { now, args }), leaseMs? }]`: a consumer of your own. Your route calls `pull(db, name, now, undefined, args)` (exported from `lib.ts`) after its own auth. `where` returns the predicate for what the slot may lease (null: nothing now); `gate` can refuse the whole pull (one concurrent lease, a failure window). `events.leased_by` records the slot.
+- `filters: [{ slots?, where }]`: an extra AND on the core slots, for holding back an event another consumer should get first.
+- `lease(row)`: `{ ms, maxMs? }` per event; `maxMs` is a ceiling counted from `events.lease_started`, after which a heartbeat is refused.
+- `beforeRecover(db, now)`: runs while dead leases are still `running` (mark who lost them). `expiry: [{ where, ms }]`: queued events matching `where` live `ms` instead of a day.
+- `enqueue(db, { ..., extra: { role: 'member' } })` overrides the extensions' `eventColumns` for one insert; priority 3 is for other people's events and goes to the interactive slot after 0 and 1.
+
+`Extension.say.before(ctx, body)` runs before POST /say sends anything and may return a Response (a content wall, a rest period). `/say` accepts `key`, `replace`, `silent`, `reply_to`, `keyboard`, `photo_b64`, `doc_b64` + `doc_name`; `issue`, `thread`, `topic` are ignored.
+
+Live switches: `withSettings(env, keys)`, `setFlag`, `flagOn(db, key, now, ttlMs?)` in `settings.ts` read a D1 row of the same name over the deploy-time variable. `PROGRESS_DRAFT=0` as a row turns streamed drafts off.

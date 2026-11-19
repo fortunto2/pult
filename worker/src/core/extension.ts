@@ -44,6 +44,9 @@ export interface MessageCtx<X = object> extends AppCtx<X> {
   react(emoji: string): Promise<void>;
 }
 
+/** Around POST /say: `before` may refuse or swallow a message (return the Response), e.g. a content wall or a rest period; the persistent keyboard (`keyboard: true`) is createApp's `replyKeyboard`. */
+export interface SayHooks<X = object> { before?(ctx: AppCtx<X>, body: Record<string, unknown>): Promise<Response | null> }
+
 export interface Extension<X = object> {
   name: string;                                   // [a-z][a-z0-9_]{1,15}
   migrations?: Migration[];                       // ids `<name>:...`; applied after the core ones, once each, in order
@@ -55,6 +58,7 @@ export interface Extension<X = object> {
   panels?: Panel<X>[];                            // Mini App sections; data comes from your own tables, never from the core's
   /** Updates from anyone but the owner (a family member, a group, a stranger) reach the core's gate first and are dropped. An extension that serves other people claims them here: return true when handled; false leaves them to be dropped. The core never answers non-owners itself. */
   outsiders?(ctx: AppCtx<X>, update: Update): Promise<boolean>;
+  say?: SayHooks<X>;                               // around POST /say
   queue?: QueueHooks;                              // slots of its own, filters on the core slots, lease length and ceiling, a recovery step, longer expiry for some events
   /** Runs first for every update (after the stop-button handler). Return true to drop it silently: business-connection updates, bot senders, an experiment fence. */
   fence?(ctx: AppCtx<X>, update: Update): boolean | Promise<boolean>;
