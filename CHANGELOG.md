@@ -2,6 +2,10 @@
 
 Semantic versions. A core change is made here first; a private layer bumps its submodule to the tag. The extension API (`worker/src/lib.ts`, `pult.actions`, `pult.plugins`) follows semver: a breaking change to a hook is a major version. Anything under `worker/src/core/` that `lib.ts` does not export is internal and may change in a minor release.
 
+## 0.6.1 (2026-11-19)
+
+- `check-public` refuses a commit whose author or committer address is not a noreply one (`git var GIT_AUTHOR_IDENT`), in every checkout including a submodule one; two earlier public commits carry such an address and are listed by hash instead of rewriting public history.
+
 ## 0.6.0 (2026-11-19)
 
 

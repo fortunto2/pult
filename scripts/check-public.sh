@@ -31,6 +31,9 @@ GENERIC=(
 # History lines carry no path to match scrub-allow.txt against, so its fixtures are listed here as content patterns (epoch seconds in tests, all-zero and sequential short ids).
 HISTORY_FINE='1[0-9]{9}[,}) ]|0{10}|0123456789|^(\+\+\+|---) '
 ALLOW_EMAIL='(noreply|no-reply)@|@example\.(com|org)|@users\.noreply\.github\.com'
+# Commits already public whose author address is not a noreply one. History is not rewritten (tags are public);
+# each entry is a short hash, and the identity check below keeps the list from growing.
+KNOWN_AUTHOR_SLIPS='^(commit )?(21900ef|64eb711) '
 
 files() { git ls-files -co --exclude-standard | grep -vE '^scripts/(scrub-allow\.txt|check-public\.sh)$|(^|/)(node_modules|\.venv|_work)/|(^|/)(package-lock\.json|uv\.lock)$|\.(png|jpg|ico|woff2?)$'; }
 allowed() {  # $1 path, $2 matching line
@@ -60,12 +63,23 @@ for re in "${GENERIC[@]}"; do
   scan generic < <(printf '%s\n' "$FILES" | xargs grep -HnE -- "$re" 2>/dev/null)
 done
 
+# The identity this commit will carry: a real address in the author or committer line is as public as the code.
+# Fix: git config user.email <login>@users.noreply.github.com (in every checkout, including a submodule one).
+for who in AUTHOR COMMITTER; do
+  ident="$(git var "GIT_${who}_IDENT" 2>/dev/null)" || continue
+  email="$(printf '%s' "$ident" | sed -n 's/.*<\(.*\)>.*/\1/p')"
+  if [ -n "$email" ] && ! printf '%s' "$email" | grep -qiE -- "$ALLOW_EMAIL"; then
+    echo "identity: the $(printf '%s' "$who" | tr A-Z a-z) address of this commit is not a noreply one; run: git config user.email <login>@users.noreply.github.com"
+    bad=1
+  fi
+done
+
 if [ -f "$SCRUB_FILE" ]; then
   while IFS= read -r re; do
     case "$re" in ''|'#'*) continue ;; esac
     scan personal < <(printf '%s\n' "$FILES" | xargs grep -HniE -- "$re" 2>/dev/null)
     if [ "$HISTORY" = 1 ]; then
-      hist="$(git log --all --format='%an <%ae>%n%B' | grep -niE -- "$re" | head -3)"
+      hist="$(git log --all --format='%h %an <%ae>%n%B' | grep -vE -- "$KNOWN_AUTHOR_SLIPS" | grep -niE -- "$re" | head -3)"
       [ -n "$hist" ] && { printf 'personal (history): %s\n' "$hist"; bad=1; }
     fi
   done < "$SCRUB_FILE"
@@ -75,7 +89,7 @@ fi
 
 if [ "$HISTORY" = 1 ]; then
   for re in "${GENERIC[@]}"; do
-    hist="$(git log --all -p --format='commit %h %an <%ae>%n%B' -- . ':!uv.lock' ':!worker/package-lock.json' ':!scripts/check-public.sh' ':!scripts/scrub-allow.txt' 2>/dev/null | sed 's/^[+ -]//' | grep -E -- "$re" | grep -vE "$ALLOW_EMAIL" | grep -vE "$HISTORY_FINE" | head -3 | cut -c1-200)"
+    hist="$(git log --all -p --format='commit %h %an <%ae>%n%B' -- . ':!uv.lock' ':!worker/package-lock.json' ':!scripts/check-public.sh' ':!scripts/scrub-allow.txt' 2>/dev/null | sed 's/^[+ -]//' | grep -E -- "$re" | grep -vE "$ALLOW_EMAIL" | grep -vE "$HISTORY_FINE" | grep -vE -- "$KNOWN_AUTHOR_SLIPS" | head -3 | cut -c1-200)"
     [ -n "$hist" ] && { printf 'generic (history, %s): %s\n' "$re" "$hist"; bad=1; }
   done
 fi
