@@ -59,8 +59,8 @@ test('an unknown draft id falls back to /stop semantics', async () => {
 const item = (o: Partial<Item> = {}): Item => ({ user_id: 1, id: 'c', short: 'abcdef0123', kind: 'decision', urgency: 'today', state: 'new', first_seen: 0, last_seen: 0, shown_at: null, snooze_until: null, expires_at: null, closed_at: null, source: null,
   title: 't', body: '', actions: ['done', 'snooze_1h', 'drop'], payload: null, hash: 'h', tg_message_id: null, msg_state: 'none', rendered_hash: null, loud: false, working: null, custom: [], ...o });
 
-test('button styles: done green, not needed red, later default; copy_text for a command', () => {
-  const rows = keyboard(item({ kind: 'decision', payload: { copy: 'make deploy' } })).inline_keyboard.flat() as any[];
+test('button styles: done by urgency, not needed red, later default; copy_text for a command', () => {
+  const rows = keyboard(item({ kind: 'decision', urgency: 'week', payload: { copy: 'make deploy' } })).inline_keyboard.flat() as any[];
   assert.equal(rows.find(b => /Done/.test(b.text)).style, 'success');
   assert.equal(rows.find(b => /Not needed/.test(b.text)).style, 'danger');
   assert.equal(rows.find(b => /Later|hour/i.test(b.text)).style, undefined);
@@ -72,4 +72,11 @@ test('while a custom action runs its button is shown greyed out, and Done and La
   const k = workingKeyboard(item({ custom, working: 'draft a reply', state: 'snoozed' })).inline_keyboard;
   assert.deepEqual(k.at(-1), [{ text: '⏳ Draft reply', disabled: {} }]);
   assert.ok(k.flat().some((b: any) => b.callback_data?.endsWith(':done')));
+});
+
+test('Done carries the card urgency: now red, today blue, week green', () => {
+  for (const [urgency, style] of [['now', 'danger'], ['today', 'primary'], ['week', 'success']] as const) {
+    const rows = keyboard(item({ urgency })).inline_keyboard.flat() as { text: string; style?: string }[];
+    assert.equal(rows.find(b => /Done/.test(b.text))?.style, style);
+  }
 });

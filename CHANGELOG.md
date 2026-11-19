@@ -2,6 +2,15 @@
 
 Semantic versions. A core change is made here first; a private layer bumps its submodule to the tag. The extension API (`worker/src/lib.ts`, `pult.actions`, `pult.plugins`) follows semver: a breaking change to a hook is a major version. Anything under `worker/src/core/` that `lib.ts` does not export is internal and may change in a minor release.
 
+## 0.3.0 (2026-11-19)
+
+Alignment with the private bot that has run these paths against real Telegram.
+
+- `sendMessageDraft` text is cut at 4000 characters, the limit the live bot ships with (was 4096).
+- Done carries the card's urgency colour: now red, today blue, later green (was always green). Not needed stays red.
+- `bot-say`: a test pins that an oversize single paragraph loses no word and splits none (the cut itself was already in 0.2.0).
+- The rest of the stream path (stop button, fallback to the edit path on any refusal) was compared line by line with the live bot's and needed no change.
+
 ## 0.2.0 (2026-11-19)
 
 The core becomes a library.

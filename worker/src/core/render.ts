@@ -66,7 +66,8 @@ export function keyboard(item: Item, withCustom = true, menu = false): Markup {
   const p = payloadOf(item);
   const verb = p.meta?.verb;
   const label = (a: string) => (a === 'done' ? `✅ ${verb ?? ACTIONS.done.label}` : a === 'drop' ? `✖️ ${ACTIONS.drop.label}` : ACTIONS[a].label);
-  const styleOf = (a: string): Style => (!buttonOptions.styles ? {} : a === 'done' ? { style: 'success' } : a === 'drop' ? { style: 'danger' } : {});   // done green, not needed red, later and the rest default
+  const hot: 'danger' | 'primary' | 'success' = item.urgency === 'now' ? 'danger' : item.urgency === 'today' ? 'primary' : 'success';   // Done carries the card's urgency: now red, today blue, later green
+  const styleOf = (a: string): Style => (!buttonOptions.styles ? {} : a === 'done' ? { style: hot } : a === 'drop' ? { style: 'danger' } : {});   // done green, not needed red, later and the rest default
   const btn = (a: string): Button => ({ text: label(a), callback_data: callbackData(item.short, a), ...styleOf(a) } as Button);
   const customs = withCustom ? item.custom : [];
   const details = customs.find(c => c.label === DETAILS);

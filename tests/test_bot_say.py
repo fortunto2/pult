@@ -74,3 +74,17 @@ def test_deny_file_drops_matching_lines_and_a_missing_file_refuses(tmp_path, mon
 
     with pytest.raises(bs.cfg.DenyFileMissing):
         bs.cfg.deny_patterns()
+
+
+def test_one_oversize_paragraph_is_cut_at_a_space_or_line_break_and_no_text_is_lost():
+    words = [f"word{i}" for i in range(10000)]
+    para = " ".join(words)
+    assert "\n\n" not in para and len(para) > 50000
+    parts = bs.item_parts("Title\n" + para, "big", "note")
+    assert len(parts) >= 2 and all(len(p["body"]) <= bs.ITEM_BODY_LIMIT for p in parts)
+    assert " ".join(p["body"] for p in parts).split() == words   # every word survives, none is split in half
+    assert [p["id"] for p in parts][:2] == ["big", "big.2"]
+    nl = "line\n" * 12000
+    assert "".join(p["body"] + "\n" for p in bs.item_parts("T\n" + nl, "k", "note")).split() == nl.split()
+    blob = "x" * 70000   # no break at all: a hard cut, still lossless
+    assert "".join(p["body"] for p in bs.item_parts("T\n" + blob, "k", "note")) == blob
