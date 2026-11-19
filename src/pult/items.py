@@ -12,7 +12,7 @@
     bot-item get ID                     one item as JSON
     bot-item log ID                     every press, comment and detail of an item
     bot-item detail ID                  stdin -> the expanded section of a card (what a «More» job writes)
-    bot-item reopen ID                  put an item back on the list
+    bot-item reopen ID                  clear the «working» mark of a card whose run failed; a CLOSED card is not reopened (put it again with changed content)
     bot-item close ID [--drop|--expire] mark an item done (or dropped; --expire: no trace left in the chat)
     bot-item resolve PREFIX             expire every OPEN incident (or finished meeting) whose id starts with PREFIX; prints how many
     bot-item reply-draft CARD [--missing T] [--ring] < text   a reply text shown in a card with a copy button; nothing is sent
@@ -341,6 +341,9 @@ def main(argv: list[str] | None = None) -> int:
     else:
         state = "new" if a.cmd == "reopen" else "expired" if a.cmd == "close" and a.expire else "dropped" if a.drop else "done"
         r = request("POST", f"/items/{q(a.id, safe='')}/state", {"state": state})
+        if a.cmd == "reopen" and not r["changed"] and r["state"] in ("done", "dropped", "expired"):  # type: ignore[call-overload]
+            print(f"{r['id']}: closed ({r['state']}), reopen only clears «working» after a failed run. To bring the card back, put it again with changed content: bot-item decision --id {a.id} ...", file=sys.stderr)  # type: ignore[call-overload]
+            return 1
         print(f"{r['id']}: {r['state']}{'' if r['changed'] else ' (no change)'}")  # type: ignore[call-overload]
     return 0
 
