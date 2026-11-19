@@ -1,9 +1,4 @@
-import sys
-from pathlib import Path
-
 import pytest
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "bin"))
 
 
 @pytest.fixture(autouse=True)
@@ -12,3 +7,6 @@ def _isolation(tmp_path, monkeypatch):
     monkeypatch.setenv("PULT_CONFIG_DIR", str(tmp_path / "cfg"))
     monkeypatch.delenv("PULT_DENY_FILE", raising=False)
     monkeypatch.delenv("PULT_URL", raising=False)
+    monkeypatch.delenv("PULT_PLUGINS", raising=False)
+    monkeypatch.delenv("PULT_WORKFLOWS", raising=False)
+    monkeypatch.delenv("PULT_PROGRESS", raising=False)

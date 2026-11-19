@@ -3,11 +3,12 @@
 import json
 from pathlib import Path
 
-import pult_config as cfg
 import pytest
 
+from pult import paths as cfg
+
 ROOT = Path(__file__).resolve().parent.parent
-WF = json.loads((ROOT / "workflows.json").read_text())["workflows"]
+WF = json.loads((ROOT / "src/pult/data/workflows.json").read_text())["workflows"]
 
 
 def test_url_comes_from_env_then_file_and_a_missing_one_is_an_error(tmp_path, monkeypatch):

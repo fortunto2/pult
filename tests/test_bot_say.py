@@ -1,17 +1,6 @@
 """bot-say splits long text into parts the worker keeps whole (it slices at 4,000 UTF-16 units)."""
 
-import importlib.machinery
-import importlib.util
-import sys
-from pathlib import Path
-
-BIN = Path(__file__).resolve().parent.parent / "bin"
-sys.path.insert(0, str(BIN))
-_loader = importlib.machinery.SourceFileLoader("bot_say", str(BIN / "bot-say"))
-_spec = importlib.util.spec_from_loader("bot_say", _loader)
-assert _spec
-bs = importlib.util.module_from_spec(_spec)
-_loader.exec_module(bs)
+from pult import say as bs
 
 
 def test_short_text_is_one_part():

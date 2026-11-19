@@ -1,19 +1,9 @@
 """bot-item: argument handling and the body shape the worker's /items expects (no network)."""
 
-import importlib.machinery
-import importlib.util
-import sys
-from pathlib import Path
-
 import pytest
 
-BIN = Path(__file__).resolve().parent.parent / "bin"
-sys.path.insert(0, str(BIN))
-_loader = importlib.machinery.SourceFileLoader("bot_item", str(BIN / "bot-item"))
-_spec = importlib.util.spec_from_loader("bot_item", _loader)
-assert _spec
-bi = importlib.util.module_from_spec(_spec)
-_loader.exec_module(bi)
+from pult import items as bi
+
 
 def test_snooze_alias_expands_in_order_without_duplicates():
     assert bi.expand_actions("done,snooze,drop") == ["done", "snooze_1h", "snooze_tomorrow", "snooze_3d", "drop"]
@@ -129,13 +119,8 @@ def test_card_is_a_decision_with_link_source_and_an_automatic_details_button():
 
 
 def test_details_instruction_starts_with_the_phrase_session_run_routes_on():
-    import importlib.machinery
-    import importlib.util
+    from pult import session_run as sr
 
-    loader = importlib.machinery.SourceFileLoader("session_run", str(BIN / "session-run"))
-    spec = importlib.util.spec_from_loader("session_run", loader)
-    sr = importlib.util.module_from_spec(spec)
-    loader.exec_module(sr)
     assert bi.DETAILS_INSTRUCTION.startswith(sr.DETAILS_HEAD)
 
 

@@ -1,5 +1,5 @@
 {
-  "_doc": "Workflows for bin/session-run. A session names one (default chat). Edits are picked up on the next turn. Placeholders: {PULT} = this checkout, {WORK} = its state dir, {HOME}. permission_mode: 'acceptEdits' keeps chat safe by default (edits ok, other tools denied headless); switch to 'bypassPermissions' only if you accept an agent that can run anything on this Mac from your phone.",
+  "_doc": "Workflows for session-run. A session names one (default chat). Edits are picked up on the next turn. Placeholders: {PULT} = this checkout, {WORK} = its state dir, {HOME}. permission_mode: 'acceptEdits' keeps chat safe by default (edits ok, other tools denied headless); switch to 'bypassPermissions' only if you accept an agent that can run anything on this Mac from your phone.",
   "workflows": {
     "chat": {
       "cwd": "~",
@@ -21,6 +21,9 @@
         "Bash(python3 {PULT}/bin/bot-item list:*)",
         "Bash({PULT}/bin/bot-item get:*)",
         "Bash({PULT}/bin/bot-item log:*)",
+        "Bash(bot-item get:*)",
+        "Bash(bot-item log:*)",
+        "Bash(bot-item list:*)",
         "Edit(/{WORK}/drafts/**)"
       ],
       "disallowed_tools": [

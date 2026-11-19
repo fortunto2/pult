@@ -1,14 +1,11 @@
 """The usage-limit sentence of the Claude CLI and when it resets."""
 
-import sys
 from datetime import datetime
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bin"))
-import usage_limit as U  # noqa: E402
+from pult import usage_limit as U
 
 IST = ZoneInfo("Europe/Berlin")
 NOW = datetime(2026, 11, 15, 1, 0, tzinfo=IST).timestamp()

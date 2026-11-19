@@ -1,0 +1,159 @@
+"""Write to the owner through the bot. The token stays in Cloudflare; this talks to your worker.
+
+    echo "text" | bot-say                       a new message (POST /say)
+    echo "text" | bot-say --silent               no notification sound
+    echo "text" | bot-say --reply-to 345         as a reply to a bot message id
+    echo "text" | bot-say --key standup-DATE    one living message: with --key the text becomes an ITEM (id = key,
+                                                first line = title, kind digest by default) that the worker renders
+                                                silently and edits in place on the next call
+    echo "text" | bot-say --kind inbox --key sweep-DATE   a living note of kind inbox
+
+Prints the Telegram message_id (0 when the worker has not shown the item yet). A text over the worker's limit is split into
+parts that lose nothing. Lines matching PULT_DENY_FILE (optional) are dropped before anything is sent.
+"""
+import argparse
+import json
+import sys
+import urllib.request
+
+from pult import paths as cfg  # noqa: E402
+
+UA = cfg.UA
+CTX = cfg.ssl_context()
+LIMIT_TEXT = 4000   # the worker slices JS strings, so its limits are UTF-16 units, not characters
+ITEM_BODY_LIMIT = 3500   # the worker accepts up to 3500 characters in a note body (worker/src/api.ts), so one note fits one Telegram message
+
+
+def worker() -> str:
+    return cfg.url()
+
+
+def key_text() -> str:
+    return cfg.owner_key_file().read_text().strip()
+
+
+def post(path: str, body: dict) -> dict:
+    req = urllib.request.Request(f"{worker()}{path}", data=json.dumps(body).encode(), method="POST", headers={
+        "Authorization": f"Bearer {key_text()}", "Content-Type": "application/json", "User-Agent": UA})
+    with urllib.request.urlopen(req, timeout=30, context=CTX) as r:
+        return json.load(r)
+
+
+def say(text: str, reply_to: int | None = None, silent: bool = False) -> dict:
+    body = {k: v for k, v in {"text": text, "reply_to": reply_to, "silent": silent}.items() if v}
+    return post("/say", body)
+
+
+def u16(s: str) -> int:
+    return len(s.encode("utf-16-le")) // 2
+
+
+def _fit(text: str, limit: int) -> int:
+    """The longest prefix of text, in characters, that fits limit UTF-16 units."""
+    lo, hi = 0, len(text)
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if u16(text[:mid]) <= limit:
+            lo = mid
+        else:
+            hi = mid - 1
+    return lo
+
+
+def split(text: str, first: int = LIMIT_TEXT, rest: int = LIMIT_TEXT) -> list[str]:
+    """Parts that each fit the worker, cut at a paragraph, else a line, else a space. Nothing is lost."""
+    parts, limit = [], first
+    while u16(text) > limit:
+        end = _fit(text, limit)
+        cut = end
+        for sep in ("\n\n", "\n", " "):
+            i = text.rfind(sep, 0, end)
+            if i > end // 2:
+                cut = i
+                break
+        parts.append(text[:cut].rstrip())
+        text = text[cut:].lstrip()
+        limit = rest
+    parts.append(text)
+    return parts
+
+
+def say_long(text: str, reply_to: int | None = None, silent: bool = False) -> list[dict]:
+    """say(), split into parts that fit; the first part carries the reply."""
+    return [say(part, reply_to if n == 1 else None, silent) for n, part in enumerate(split(text), 1)]
+
+
+def _pieces(paras: list[str]) -> list[str]:
+    """Paragraphs no longer than the limit: an oversize one is cut at its last line break or space before the limit, so no text is dropped."""
+    out = []
+    for para in paras:
+        while len(para) > ITEM_BODY_LIMIT:
+            cut = max(para.rfind("\n", 0, ITEM_BODY_LIMIT), para.rfind(" ", 0, ITEM_BODY_LIMIT))
+            cut = cut if cut > ITEM_BODY_LIMIT // 2 else ITEM_BODY_LIMIT
+            out.append(para[:cut])
+            para = para[cut:].lstrip()
+        out.append(para)
+    return out
+
+
+def item_parts(text: str, key: str, kind: str) -> list[dict]:
+    """The item bodies for a text: first line is the title; a text over the limit becomes `key`, `key.2`, ... with a continued title."""
+    first, _, rest = text.strip().partition("\n")
+    title, rest = first.strip()[:300] or "(no title)", rest.strip()
+    if len(rest) <= ITEM_BODY_LIMIT:
+        return [{"id": key, "kind": kind, "title": title, "body": rest}]
+    chunks, cur = [], ""
+    for para in _pieces(rest.split("\n\n")):
+        if cur and len(cur) + len(para) + 2 > ITEM_BODY_LIMIT:
+            chunks.append(cur)
+            cur = ""
+        cur = f"{cur}\n\n{para}" if cur else para
+    chunks.append(cur)
+    return [{"id": key if n == 1 else f"{key}.{n}", "kind": kind, "title": title if n == 1 else f"{title[:270]} (part {n})",
+             "body": c[:ITEM_BODY_LIMIT]} for n, c in enumerate(chunks, 1)]
+
+
+def put_items(parts: list[dict]) -> int:
+    mid = 0
+    for body in parts:
+        mid = mid or (post("/items", body).get("message_id") or 0)
+    return mid
+
+
+def strip_denied_lines(text: str, patterns: list) -> str:
+    return "\n".join(ln for ln in text.splitlines() if not cfg.denied(ln, patterns=patterns))
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--key")
+    ap.add_argument("--reply-to", type=int)
+    ap.add_argument("--silent", action="store_true")
+    ap.add_argument("--kind", choices=["inbox", "digest"], default="digest")
+    a = ap.parse_args()
+    text = sys.stdin.read().strip()
+    try:
+        patterns = cfg.deny_patterns()   # fail closed: a configured but missing wall file means nothing is sent
+    except cfg.DenyFileMissing as e:
+        sys.exit(f"bot-say: {e}")
+    text = strip_denied_lines(text, patterns).strip()
+    if not text:
+        print(0)
+        return 0
+    if a.key:
+        try:
+            print(put_items(item_parts(text, a.key, a.kind)))
+            return 0
+        except Exception as e:  # noqa: BLE001 - never lose the text: fall through to a plain message
+            print(f"bot-say: item path failed ({str(e)[:120]}), sending a plain message", file=sys.stderr)
+    out = say_long(text, a.reply_to, a.silent)
+    print(out[0].get("message_id", 0))
+    return 0
+
+
+def cli() -> None:
+    sys.exit(main())
+
+
+if __name__ == "__main__":
+    cli()

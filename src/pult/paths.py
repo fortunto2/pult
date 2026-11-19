@@ -1,7 +1,10 @@
 """Where pult finds its roots, its worker and its keys. Everything is an env var with a sane default.
 
-    PULT_HOME     this checkout (derived from this file)
+    PULT_HOME     this checkout (derived from this file); {PULT} in workflows and rules, and bin/ with the script shims, live here
     PULT_WORK     live state of the Mac side: drafts/, deny file, logs. Default $PULT_HOME/_work
+    PULT_WORKFLOWS  full override of the workflows file. Default: the packaged pult/data/workflows.json
+    PULT_PLUGINS  comma list of importable modules, each with register(registry) (see pult.plugins)
+    PULT_PROGRESS draft (default) | edit: how the "working..." line of a turn is shown (see pult.session_run)
     PULT_URL      the worker's base URL (no trailing slash). Else the first line of ~/.config/pult/url
     PULT_STATE    runner state (flock, limit-until, completed events). Default ~/.config/pult
     keys          a key is a file with one line. Owner scripts (bot-item, bot-say, tg-channel) read PULT_KEY_FILE,
@@ -17,14 +20,38 @@ import json
 import os
 import re
 import ssl
+import sys
 import urllib.request
+from importlib import resources
 from pathlib import Path
 
-PULT_HOME = Path(os.environ.get("PULT_HOME") or Path(__file__).resolve().parent.parent).expanduser().resolve()
+PULT_HOME = Path(os.environ.get("PULT_HOME") or Path(__file__).resolve().parents[2]).expanduser().resolve()
 BIN = PULT_HOME / "bin"
 WORK = Path(os.environ.get("PULT_WORK") or PULT_HOME / "_work").expanduser()
 CONFIG_DIR = Path(os.environ.get("PULT_CONFIG_DIR") or Path.home() / ".config/pult").expanduser()
 UA = "pult/1"   # Cloudflare refuses the default Python-urllib agent (403)
+
+
+def data_text(name: str) -> str:
+    """A file shipped inside the package (pult/data/<name>)."""
+    return resources.files("pult").joinpath("data", name).read_text(encoding="utf-8")
+
+
+def workflows_file() -> Path | None:
+    """PULT_WORKFLOWS when set (a full override), else None: the packaged default is used."""
+    e = os.environ.get("PULT_WORKFLOWS")
+    return Path(e).expanduser() if e else None
+
+
+def workflows_text() -> str:
+    f = workflows_file()
+    return f.read_text() if f else data_text("workflows.json")
+
+
+def script_argv(name: str, module: str) -> list[str]:
+    """argv that runs one of pult's own tools: the bin/ shim of this checkout when it exists, else `python -m <module>`."""
+    shim = BIN / name
+    return [sys.executable, str(shim)] if shim.exists() else [sys.executable, "-m", module]
 
 
 def url() -> str:

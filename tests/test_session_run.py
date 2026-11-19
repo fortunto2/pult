@@ -1,7 +1,5 @@
 """session-run against a fake worker (recording HTTP server) and a fake claude that prints recorded stream-json."""
 
-import importlib.machinery
-import importlib.util
 import json
 import os
 import subprocess
@@ -13,12 +11,9 @@ from pathlib import Path
 
 import pytest
 
+from pult import session_run as sr
+
 ROOT = Path(__file__).resolve().parent.parent
-_loader = importlib.machinery.SourceFileLoader("session_run", str(ROOT / "bin/session-run"))
-_spec = importlib.util.spec_from_loader("session_run", _loader)
-assert _spec
-sr = importlib.util.module_from_spec(_spec)
-_loader.exec_module(sr)
 
 FAKE = str(ROOT / "tests/fixtures/fake_claude.py")
 SID = "cl-0001"
@@ -39,6 +34,7 @@ def result(text, error=False, sid=SID):
 class FakeWorker:
     def __init__(self):
         self.beat_ok, self.ack_ok = True, True
+        self.draft_reply, self.draft_code = {"ok": True}, 200
         self.calls, self.stop_after, self.files, self.session = [], None, {}, {"id": "s1", "user_id": 111, "claude_session_id": None, "cwd": None, "workflow": "chat"}
         me = self
 
@@ -57,6 +53,8 @@ class FakeWorker:
                     out = {"ok": me.ack_ok}
                 elif self.path.endswith("/say"):
                     out = {"message_id": 900 + len(me.calls)}
+                elif self.path.endswith("/draft"):
+                    out, code = me.draft_reply, me.draft_code
                 elif self.path.startswith("/files/"):
                     fid = self.path.split("/files/")[1].split("?")[0]
                     if fid in me.files:
@@ -104,7 +102,7 @@ def env(tmp_path, monkeypatch):
                               "transcribers": {"stub": [sys.executable, str(ROOT / "tests/fixtures/stub_transcribe.py"), "{audio}", "{outdir}"]}, "transcriber": "stub"}))
     for k, v in {"PULT_URL": w.url, "PULT_RUNNER_KEY_FILE": str(tmp_path / "key"), "PULT_CLAUDE": json.dumps([sys.executable, FAKE]),
                  "PULT_SESSIONS_DIR": str(tmp_path / "sessions"), "PULT_STATE": str(tmp_path / "state"), "PULT_WORKFLOWS": str(wf), "PULT_WORK": str(tmp_path / "work"),
-                 "HEARTBEAT_S": "0.2", "PROGRESS_S": "0.1", "FAKE_CLAUDE_ARGV": str(tmp_path / "argv.json")}.items():
+                 "HEARTBEAT_S": "0.2", "PROGRESS_S": "0.1", "PULT_PROGRESS": "edit", "FAKE_CLAUDE_ARGV": str(tmp_path / "argv.json")}.items():
         monkeypatch.setenv(k, v)
 
     def run(script, event=None, session=None):
@@ -460,3 +458,77 @@ def test_a_live_session_that_pult_run_picks_up_after_the_channel_died_answers_li
     assert run([init(), result("Answer from the fallback path.")], session={"workflow": "live"}) == 0   # no 'live' entry in workflows.json: the chat workflow runs
     argv = json.loads((tmp / "argv.json").read_text())
     assert argv[argv.index("--permission-mode") + 1] == "bypassPermissions" and w.says()[-1]["text"] == "Answer from the fallback path."
+
+
+# --- progress as a streamed draft (PULT_PROGRESS=draft, the default) ---
+
+
+def text_block(text):
+    return {"line": {"type": "assistant", "session_id": SID, "message": {"content": [{"type": "text", "text": text}]}}}
+
+
+def drafts(w):
+    return [c[2] for c in w.calls if c[1].endswith("/draft")]
+
+
+def live_lines(w):
+    return [c for c in w.calls if c[1].endswith("/say") and c[2].get("key") == "prog:7"]
+
+
+def test_draft_mode_streams_into_one_draft_and_posts_only_the_final_answer(env, monkeypatch):
+    w, run, _ = env
+    monkeypatch.setenv("PULT_PROGRESS", "draft")
+    monkeypatch.setenv("PULT_DRAFT_S", "0.05")
+    run([init(), tool("Read", file_path="/x/a.md"), {"sleep": 0.3}, text_block("Looking at the notes now."), {"sleep": 0.4}, result("done")])
+    d = drafts(w)
+    assert len(d) >= 2 and d[0]["text"] == ""                                          # the first one is the placeholder: the worker shows "Thinking..."
+    assert all(x["draft_id"] == 7 and x["can_stop"] is True for x in d)
+    assert any("working: reading a.md" in x["text"] for x in d) and d[-1]["text"] == "Looking at the notes now."   # then the assistant's own words
+    assert live_lines(w) == []                                                         # no edited message, so nothing to delete either
+    assert w.says()[-1]["text"] == "done" and w.acks() == [{"status": "done"}]
+
+
+def test_the_draft_shows_the_tail_of_a_long_answer_not_the_head(env, monkeypatch):
+    w, run, _ = env
+    monkeypatch.setenv("PULT_PROGRESS", "draft")
+    monkeypatch.setenv("PULT_DRAFT_S", "0.05")
+    run([init(), text_block("HEAD " + "x" * 5000 + " TAIL"), {"sleep": 0.4}, result("ok")])
+    last = drafts(w)[-1]["text"]
+    assert len(last) == sr.DRAFT_TAIL and last.endswith("TAIL") and "HEAD" not in last
+
+
+def test_draft_updates_are_coalesced_to_one_per_interval(env, monkeypatch):
+    w, run, _ = env
+    monkeypatch.setenv("PULT_PROGRESS", "draft")
+    monkeypatch.setenv("PULT_DRAFT_S", "5")
+    run([init(), tool("Read", file_path="/x/a.md"), {"sleep": 0.3}, text_block("one"), {"sleep": 0.3}, text_block("two"), {"sleep": 0.3}, result("ok")])
+    assert len(drafts(w)) == 1                                                         # only the immediate placeholder: the rest came inside the interval
+
+
+@pytest.mark.parametrize("how", ["fallback", "http500"])
+def test_a_worker_without_drafts_drops_this_turn_back_to_the_edited_message(env, monkeypatch, how):
+    w, run, _ = env
+    monkeypatch.setenv("PULT_PROGRESS", "draft")
+    monkeypatch.setenv("PULT_DRAFT_S", "0.05")
+    if how == "fallback":
+        w.draft_reply = {"ok": False, "fallback": True}
+    else:
+        w.draft_code = 500
+    run([init(), tool("Read", file_path="/x/a.md"), {"sleep": 0.4}, tool("Bash", command="ls"), {"sleep": 0.4}, result("done")])
+    assert len(drafts(w)) == 1                                                         # one refusal and the turn never asks again
+    live = [c[2]["text"] for c in live_lines(w) if not c[2].get("delete")]
+    assert live[0] == "working..." and all(live)                                       # the edit path took over at once: keyed messages with words, never an empty one
+    assert any(t.startswith("working: reading a.md") for t in live)
+    kinds = [("del" if c[2].get("delete") else "say") for c in w.calls if c[1].endswith("/say")]
+    assert kinds[-2:] == ["del", "say"] and w.says()[-1]["text"] == "done"
+
+
+def test_edit_mode_never_calls_the_draft_endpoint(env):
+    w, run, _ = env
+    run([init(), tool("Read", file_path="/x/a.md"), {"sleep": 0.4}, result("ok")])
+    assert drafts(w) == [] and [c for c in live_lines(w)]
+
+
+def test_an_invalid_progress_mode_falls_back_to_draft(env, monkeypatch, capsys):
+    monkeypatch.setenv("PULT_PROGRESS", "sparkles")
+    assert sr.Cfg().progress_mode == "draft" and "not draft|edit" in capsys.readouterr().err
