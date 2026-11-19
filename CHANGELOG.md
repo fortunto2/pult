@@ -6,6 +6,10 @@ Semantic versions. A core change is made here first; a private layer bumps its s
 
 - `docs/migration.md` removed: it was one private bot's plan for moving onto the core, of no use to someone starting fresh. The submodule workflow it held (core changes made in `core/`, the scrub hook there) is in `docs/extending.md`.
 
+## 0.6.3 (2026-11-19)
+
+- `bot-item reopen` says what it does (clears the working mark after a failed run) and exits 1 on a closed card with the way that works (put it again with changed content), instead of printing "(no change)".
+
 ## 0.6.2 (2026-11-19)
 
 - Test isolation is structural: `pult.paths.url()` refuses any non-loopback worker URL while `PYTEST_CURRENT_TEST` is set, so a test that forgot to point at its own worker cannot post into a live chat. A test that really talks to a live worker sets `PULT_ALLOW_LIVE_IN_TESTS=1`.
