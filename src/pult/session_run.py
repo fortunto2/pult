@@ -122,8 +122,8 @@ def ack_event(cfg: Cfg, ev: dict, status: str, **kw):
         ACK["rejected"] = True
         print(f"ACK REJECTED event {ev['id']} status={status}: the lease is no longer ours; the answer may already be delivered", file=sys.stderr)
         inc = [sys.executable, os.environ["PULT_INCIDENT"]] if os.environ.get("PULT_INCIDENT") else cfgmod.script_argv("bot-item", "pult.items")
-        subprocess.run([*inc, "put", "--kind", "incident", "--id", f"incident:ack:{ev['id']}", "--title", f"Event {ev['id']}: ack rejected",
-                        "--body", "-"], input=f"The runner finished event {ev['id']} (status {status}) but the worker had already given the lease away. Check for two answers or a doubled action.", text=True, capture_output=True, check=False)
+        subprocess.run([*inc, "put", "--kind", "incident", "--id", f"incident:ack:{ev['id']}", "--title", tr("run.ack_title", id=ev["id"]),
+                        "--body", "-"], input=tr("run.ack_body", id=ev["id"], status=status), text=True, capture_output=True, check=False)
     return r
 
 

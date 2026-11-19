@@ -35,6 +35,8 @@ DEFAULTS: dict[str, str] = {
     "run.empty": "(empty answer)",
     "run.lease_lost": "The lease was lost during the turn.",
     "run.crashed": "Runner crashed: {err}",
+    "run.ack_title": "Event {id}: ack rejected",
+    "run.ack_body": "The runner finished event {id} (status {status}) but the worker had already given the lease away. Check for two answers or a doubled action.",
     "run.no_transcript": "Could not transcribe the voice message. Send it as text or try again.",
     "run.no_context": "(The previous context of this session is unavailable, answer from the text below.)",
     "run.task_head": "TASK (from a card button or the owner's reply):",

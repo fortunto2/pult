@@ -6,6 +6,7 @@ Semantic versions. A core change is made here first; a private layer bumps its s
 
 - Runner: `Registry.register(..., session=False)` for a job queued without a chat session (the handler gets `sess == {"id": ""}` and nothing is looked up), `ActionResult.exit_code` for the runner's process exit code.
 - Plugin hook `placeholders() -> dict`: extra `{NAME}` placeholders in workflows and rules (`{PULT}` and `{WORK}` stay built in). `PULT_AGENT_RULES`: a file that replaces the packaged agent rules.
+- The rejected-ack incident card is worded through `strings()` (`run.ack_title`, `run.ack_body`).
 - Draft progress: an unchanged draft text is sent again every `PULT_KEEPALIVE_S` (15 s) because a Telegram draft is a 30 s preview.
 
 ## 0.5.1 (2026-11-19)
