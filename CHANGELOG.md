@@ -2,7 +2,8 @@
 
 Semantic versions. A core change is made here first; a private layer bumps its submodule to the tag. The extension API (`worker/src/lib.ts`, `pult.actions`, `pult.plugins`) follows semver: a breaking change to a hook is a major version. Anything under `worker/src/core/` that `lib.ts` does not export is internal and may change in a minor release.
 
-## Unreleased
+## 0.6.0 (2026-11-19)
+
 
 - Runner: `Registry.register(..., session=False)` for a job queued without a chat session (the handler gets `sess == {"id": ""}` and nothing is looked up), `ActionResult.exit_code` for the runner's process exit code.
 - Plugin hook `placeholders() -> dict`: extra `{NAME}` placeholders in workflows and rules (`{PULT}` and `{WORK}` stay built in). `PULT_AGENT_RULES`: a file that replaces the packaged agent rules.
