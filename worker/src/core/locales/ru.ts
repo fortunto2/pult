@@ -29,4 +29,16 @@ export const RU: Record<string, string> = {
   unknown_button: 'не понял кнопку', queue_off_send: 'очередь Мака выключена, отправка недоступна', queue_off_reply: 'очередь Мака выключена, черновик не написать',
   queue_failed: 'не удалось поставить в очередь', writing_toast: 'пишу черновик, пришлю с кнопками', started_draft: 'запустил, пришлю черновик',
   fix_prompt: 'Ответь на эту карточку, что поправить в письме', no_more: 'больше нет', shown_n: 'показал {n}',
+  // queue, sessions and chat (the live bot's own wording)
+  unsupportedMedia: '{kind}: не поддерживается', kindVideo: 'видео', fileTooBig: '{name}: больше 20 МБ, Telegram не отдаёт такой файл боту',
+  pauseLine: 'лимит Claude до {time}, сообщение в очереди',
+  newSession: 'Новая сессия «{title}». Обычные сообщения идут в неё до полуночи; ответ на любое сообщение бота продолжает ту сессию, к которой оно относится.',
+  noSessions: 'Сессий пока нет: первое сообщение откроет сессию дня.', sessionRunning: ' · работает', sessionAgo: ' · {ago} назад', agoMin: '{n} мин', agoHour: '{n} ч', agoDay: '{n} дн',
+  switched: 'Переключил: сообщения идут в эту сессию до полуночи.', noSuchSession: 'Такой сессии нет.',
+  stopping: 'Останавливаю «{title}»{running}{dropped}.', stoppingRunning: ' (до 20 с)', stoppingDropped: ', из очереди снято: {n}', nothingRunningIn: 'В «{title}» ничего не выполняется.',
+  stoppingDraft: 'Останавливаю{running}{dropped}.', nothingRunning: 'Уже ничего не выполняется.',
+  queueStatus: 'Очередь: {queued}; выполняется: {running}.', queueEmpty: 'пусто', limitUntil: '\nЛимит Claude до {time}.',
+  itemRule: 'Это запрос из карточки решения в боте (карточка процитирована выше). Сделай, что просит текст, только чтение и черновики: ничего не отправляй от его имени, не плати, не отменяй, не удаляй. Если решение полностью закрыто твоим ответом, закончи строкой `ITEM-DONE`; иначе карточка вернётся в его список.',
+  start: 'Напиши сообщение, и Claude ответит. /help покажет команды.', paused: 'Бот сейчас не принимает сообщения.', appUnknown: 'Адрес Mini App пока неизвестен: один раз вызови /setup после деплоя.',
+  appBlurb: 'Карточки, сессии, очередь.', appOpen: 'Открыть', noOpen: 'Открытых решений нет.', nothingSnoozed: 'Отложенных нет.', callbackFailed: 'не получилось', menuTitle: 'Пульт',
 };

@@ -59,7 +59,7 @@ export async function cmdNew(env: { DB: D1Database }, userId: number, title: str
 }
 export async function cmdSessions(env: { DB: D1Database }, userId: number, now: number, tz: string) {
   const list = await listSessions(env.DB, userId), cur = await targetOf(env.DB, userId, now, tz);
-  const ago = (t: number) => { const m = Math.max(0, Math.round((now - t) / 60e3)); return m < 60 ? `${m} min` : m < 1440 ? `${Math.round(m / 60)} h` : `${Math.round(m / 1440)} d`; };
+  const ago = (at: number) => { const m = Math.max(0, Math.round((now - at) / 60e3)); return m < 60 ? t('agoMin', { n: m }) : m < 1440 ? t('agoHour', { n: Math.round(m / 60) }) : t('agoDay', { n: Math.round(m / 1440) }); };
   const lines = list.map((s, n) => `${n + 1}. ${s.id === cur?.id ? '▶ ' : ''}${s.title}${t('sessionAgo', { ago: ago(s.last_active) })}${s.status === 'running' ? t('sessionRunning') : ''}`);
   return { text: list.length ? lines.join('\n') : t('noSessions'), buttons: list.map((s, n) => ({ text: `${n + 1}`, callback_data: `sw:${s.id}` })) };
 }

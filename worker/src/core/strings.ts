@@ -42,6 +42,7 @@ export const DEFAULTS = {
   noSessions: 'No sessions yet: your first message opens the day\'s session.',
   sessionRunning: ' · running',
   sessionAgo: ' · {ago} ago',
+  agoMin: '{n} min', agoHour: '{n} h', agoDay: '{n} d',
   switched: 'Switched: messages go to this session until midnight.',
   noSuchSession: 'No such session.',
   stopping: 'Stopping "{title}"{running}{dropped}.',

@@ -4,6 +4,7 @@ Semantic versions. A core change is made here first; a private layer bumps its s
 
 ## Unreleased
 
+- Session ages (`5 min`, `2 h`, `1 d`) go through the string table (`agoMin`, `agoHour`, `agoDay`); `locales/ru.ts` now covers every key of the table, queue, sessions and chat included.
 - `Extension.keyed(req, ctx)`: a second credential for part of the API (a device that may lease only its own events). `QueueHooks.seen(db, slot, now)` runs on each interactive/background pull before the pause check; `PullArgs.db` lets a filter or slot query D1. `upsertItem` and `Incoming` are exported from `lib.ts`.
 - `lib.ts` exports what private extensions import from the card layer: `ACTIONS`/`addActions`, `upsertItem`, `applyWork`/`applyUnwork`, `metaOf`, `groupOf`, `streamOf`, `configureCards`, the draft helpers, `withSettings`/`setFlag`/`flagOn`, `authenticate`/`authenticateUser`.
 - `createApp` shell options: `ownerTz(env)` (async, the owner's zone from a row or a heartbeat), `withEnv(env)` (stored switches over deploy variables, once per request or tick), `botInfo` (no getMe on a cold start), `cards` (the deployment's card configuration).
