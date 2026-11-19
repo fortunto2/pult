@@ -21,6 +21,7 @@ import os
 import re
 import ssl
 import sys
+import urllib.parse
 import urllib.request
 from importlib import resources
 from pathlib import Path
@@ -60,7 +61,21 @@ def script_argv(name: str, module: str) -> list[str]:
     return [sys.executable, str(shim)] if shim.exists() else [sys.executable, "-m", module]
 
 
+def _loopback(u: str) -> bool:
+    host = (urllib.parse.urlsplit(u).hostname or "").lower()
+    return host in {"localhost", "127.0.0.1", "::1"} or host.startswith("127.")
+
+
 def url() -> str:
+    """The worker URL. Under pytest (PYTEST_CURRENT_TEST is set) anything but a loopback address is refused, so a test that forgot to point at its own worker can
+    never post into a live chat; a test that really means to talk to a live worker sets PULT_ALLOW_LIVE_IN_TESTS=1."""
+    u = _url()
+    if os.environ.get("PYTEST_CURRENT_TEST") and not os.environ.get("PULT_ALLOW_LIVE_IN_TESTS") and not _loopback(u):
+        raise SystemExit(f"pult: refusing {u} under pytest: not a loopback worker (set PULT_ALLOW_LIVE_IN_TESTS=1 to opt in)")
+    return u
+
+
+def _url() -> str:
     u = os.environ.get("PULT_URL")
     if not u:
         f = CONFIG_DIR / "url"

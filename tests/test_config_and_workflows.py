@@ -15,9 +15,9 @@ def test_url_comes_from_env_then_file_and_a_missing_one_is_an_error(tmp_path, mo
     with pytest.raises(SystemExit):
         cfg.url()
     (tmp_path / "cfg").mkdir()
-    (tmp_path / "cfg/url").write_text("https://pult.example.test/\n")
+    (tmp_path / "cfg/url").write_text("http://127.0.0.1:8787/\n")
     monkeypatch.setattr(cfg, "CONFIG_DIR", tmp_path / "cfg")
-    assert cfg.url() == "https://pult.example.test"
+    assert cfg.url() == "http://127.0.0.1:8787"
     monkeypatch.setenv("PULT_URL", "http://127.0.0.1:9/")
     assert cfg.url() == "http://127.0.0.1:9"
 
