@@ -3,6 +3,7 @@ import { ACTIONS, OPEN_STATES, WORK_HOURS, type Incoming, type Item, type LogRow
 
 const H = 3600e3;
 export const DEFAULT_TTL: Record<Urgency, number> = { now: 24 * H, today: 36 * H, week: 7 * 24 * H };
+export const DROPPED_CHAT_QUIET_MS = 7 * 24 * H;
 export const isWorking = (i: Item) => i.state === 'snoozed' && i.working !== null;
 const isOpen = (s: State) => OPEN_STATES.includes(s);
 
@@ -13,24 +14,28 @@ function log(item: Pick<Item, 'user_id' | 'id'>, at: number, from: State | null,
   return { user_id: item.user_id, item_id: item.id, at, from_state: from, to_state: to, by, note };
 }
 
-/** Insert / touch / update in place / reopen. The same id with the same content creates nothing; a closed item stays closed until its content changes. */
+/** Insert / touch / update in place / reopen, per the spec's upsert rules. */
 export function upsert(existing: Item | null, inc: Incoming, userId: number, now: number, by = 'job'): UpsertResult {
-  // Decisions and meetings run out; a live note and an incident stay until replaced or acknowledged.
+  // Decisions and meetings run out; a live inbox/digest message and an incident stay until replaced or acknowledged.
   const expires = inc.expires_at ?? (inc.kind === 'decision' || inc.kind === 'meeting' ? now + DEFAULT_TTL[inc.urgency] : null);
   const fresh = (): Item => ({
-    user_id: userId, id: inc.id, short: inc.short, kind: inc.kind, urgency: inc.urgency, state: 'new',
+    user_id: userId, id: inc.id, short: inc.short, origin_user: inc.origin_user, kind: inc.kind, urgency: inc.urgency, state: 'new',
     first_seen: now, last_seen: now, shown_at: null, snooze_until: null, expires_at: expires, closed_at: null, source: inc.source,
     title: inc.title, body: inc.body, actions: inc.actions, payload: inc.payload, hash: inc.hash,
-    tg_message_id: null, msg_state: 'none', rendered_hash: null, loud: inc.loud, working: null, custom: inc.custom,
+    tg_message_id: null, msg_state: 'none', rendered_hash: null, loud: inc.loud, loud_sent_at: null, bumped_at: null, working: null, custom: inc.custom,
   });
   if (!existing) { const item = fresh(); return { item, log: log(item, now, null, 'new', by, 'insert'), kind: 'insert' }; }
   if (existing.hash === inc.hash) return { item: { ...existing, last_seen: now }, log: null, kind: 'touch' };  // closed stays closed
   if (isOpen(existing.state)) {
-    const item = { ...existing, last_seen: now, title: inc.title, body: inc.body, actions: inc.actions, payload: inc.payload,
+    const item = { ...existing, last_seen: now, title: inc.title, body: inc.body, actions: inc.actions, payload: carryDraft(existing.payload, inc.payload),
       hash: inc.hash, kind: inc.kind, urgency: inc.urgency, source: inc.source, loud: inc.loud, custom: inc.custom };
     return { item, log: log(item, now, existing.state, existing.state, by, 'content changed'), kind: 'update' };
   }
-  // Closed and the fact changed: a new life. The old message (collapsed) stays in tg_message_id for the renderer to replace.
+  // Dropping a group-chat card (id `tg:-<id>`) is about the chat, not the message: new chatter does not reopen it. Only a direct mention or a reply to the owner
+  // (the job sets payload.direct) or a week of quiet does. Mail and direct messages reopen as before.
+  if (existing.state === 'dropped' && existing.id.startsWith('tg:-') && !(inc.payload as { direct?: unknown } | null)?.direct && existing.closed_at !== null && now - existing.closed_at < DROPPED_CHAT_QUIET_MS)
+    return { item: { ...existing, last_seen: now }, log: null, kind: 'touch' };
+  // Closed and the fact changed: a new life. The old message (collapsed) is kept in tg_message_id for the renderer to delete.
   const item: Item = { ...fresh(), short: existing.short, tg_message_id: existing.tg_message_id,
     msg_state: existing.msg_state === 'live' ? 'live' : existing.msg_state === 'collapsed' ? 'collapsed' : 'none' };
   return { item, log: log(item, now, existing.state, 'new', by, `reopened: content changed after ${existing.state}`), kind: 'reopen' };
@@ -48,7 +53,7 @@ export function tomorrowMorning(now: number, tz: string): number {
 /** One state action. Returns null when it changes nothing (double press, wrong state, action not in the item's list). */
 export function transition(item: Item, action: string, now: number, by: string, tz = 'UTC'): { item: Item; log: LogRow } | null {
   const def = ACTIONS[action];
-  if (!def || !item.actions.includes(action)) return null;
+  if (!def || def.tier !== 'state' || !item.actions.includes(action)) return null;
   if (item.state !== 'new' && item.state !== 'shown' && !isWorking(item)) return null;
   let to: State = 'done', snooze: number | null = null;
   if (action === 'drop') to = 'dropped';
@@ -63,7 +68,7 @@ export function transition(item: Item, action: string, now: number, by: string, 
 /** Hourly sweep for one item: expiry of undecided, wake of snoozed. */
 export function sweepItem(item: Item, now: number): { item: Item; log: LogRow } | null {
   if (item.state === 'snoozed' && item.snooze_until !== null && item.snooze_until <= now) {
-    // The collapsed message is replaced by a fresh one from the renderer.
+    // The collapsed message is deleted and a fresh loud one sent by the renderer.
     return { item: { ...item, state: 'new', snooze_until: null, working: null, shown_at: null, rendered_hash: null, expires_at: Math.max(item.expires_at ?? 0, now + DEFAULT_TTL[item.urgency]) },
       log: log(item, now, 'snoozed', 'new', 'sweep', 'snooze over') };
   }
@@ -87,4 +92,30 @@ export function work(item: Item, text: string, now: number, by: string, note: st
 export function unwork(item: Item, now: number, by: string): { item: Item; log: LogRow } | null {
   if (!isWorking(item)) return null;
   return { item: { ...item, state: 'new', snooze_until: null, working: null, shown_at: null, rendered_hash: null }, log: log(item, now, 'snoozed', 'new', by, 'run failed, back on the list') };
+}
+
+/** A job that re-posts a card with changed text must not wipe the draft a job attached to it (send on confirm): `draft` and its state carry over unless the new payload names its own. */
+function carryDraft(old: unknown, inc: unknown): unknown {
+  const o = (old ?? {}) as Record<string, unknown>;
+  const i = (inc ?? {}) as Record<string, unknown>;
+  const reply = o.reply && !i.reply ? { reply: o.reply, ...(o.ring_at && !i.ring_at ? { ring_at: o.ring_at } : {}) } : {};   // a drafted Telegram/LinkedIn reply stays too
+  if (!o.draft || i.draft) return Object.keys(reply).length ? { ...i, ...reply } : inc;
+  return { ...i, ...reply, draft: o.draft, ...(o.draft_state ? { draft_state: o.draft_state } : {}), ...(o.ring_at && !i.ring_at ? { ring_at: o.ring_at } : {}) };
+}
+
+
+// --- the button grammar : direct transitions that do not need the action in the item's stored list ---
+export const UNDO_MS = 60e3, EFFORT_MS = 120e3;
+
+/** Close or snooze a card by a tap of the new grammar. `note` is what the log (and the weekly mirror) reads: `drop:stale`, `answer:0`, `snooze:tomorrow`. */
+export function settle(item: Item, to: 'done' | 'dropped' | 'snoozed', now: number, by: string, note: string, until: number | null = null): { item: Item; log: LogRow } | null {
+  if (item.state !== 'new' && item.state !== 'shown' && !isWorking(item)) return null;
+  return { item: { ...item, state: to, snooze_until: to === 'snoozed' ? until : null, closed_at: to === 'snoozed' ? null : now, working: null }, log: log(item, now, item.state, to, by, note) };
+}
+
+/** Undo the last tap within a minute: back to the state it came from. `last` is the item's newest log row. */
+export function undone(item: Item, last: LogRow | null, now: number): { item: Item; log: LogRow } | null {
+  if (!last || last.to_state !== item.state || !last.by.startsWith('user:') || now - last.at > UNDO_MS || !['new', 'shown'].includes(last.from_state ?? '')) return null;
+  if (/^(sy_|send)/.test(last.note) || last.note === 'undo') return null;   // a sent mail is not undoable
+  return { item: { ...item, state: last.from_state!, snooze_until: null, closed_at: null, working: null, rendered_hash: null }, log: log(item, now, item.state, last.from_state!, last.by, 'undo') };
 }

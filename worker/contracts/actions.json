@@ -1,8 +1,33 @@
 {
-  "done":            { "tier": "state", "label": "Done" },
-  "ack":             { "tier": "state", "label": "Acknowledged" },
-  "drop":            { "tier": "state", "label": "Not needed" },
-  "snooze_1h":       { "tier": "state", "label": "In 1 hour", "snooze": "1h" },
-  "snooze_tomorrow": { "tier": "state", "label": "Tomorrow", "snooze": "tomorrow" },
-  "snooze_3d":       { "tier": "state", "label": "In 3 days", "snooze": "3d" }
+  "done": {
+    "tier": "state",
+    "label": "Done"
+  },
+  "ack": {
+    "tier": "state",
+    "label": "Acknowledged"
+  },
+  "drop": {
+    "tier": "state",
+    "label": "Not needed"
+  },
+  "snooze_1h": {
+    "tier": "state",
+    "label": "In 1 hour",
+    "snooze": "1h"
+  },
+  "snooze_tomorrow": {
+    "tier": "state",
+    "label": "Tomorrow",
+    "snooze": "tomorrow"
+  },
+  "snooze_3d": {
+    "tier": "state",
+    "label": "In 3 days",
+    "snooze": "3d"
+  },
+  "draft": {
+    "tier": "draft",
+    "label": "Draft a reply"
+  }
 }

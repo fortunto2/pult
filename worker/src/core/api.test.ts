@@ -33,7 +33,7 @@ test('parseIncoming: the bounds are the contract', async () => {
 });
 
 test('the meta fields are cut to length and stay out of the content hash', async () => {
-  assert.deepEqual(parseMeta({ do: 'd'.repeat(200), why: ' w ', cost: '', verb: 'v'.repeat(40), junk: 1 }), { do: 'd'.repeat(90), why: 'w', verb: 'v'.repeat(16) });
+  assert.deepEqual(parseMeta({ do: 'd'.repeat(200), why: ' w ', cost: '', verb: 'v'.repeat(40), junk: 1 }), { do: 'd'.repeat(89) + '…', why: 'w', verb: 'v'.repeat(15) + '…' });
   const a = await parseIncoming({ id: 'a', title: 't', payload: { link: 'https://x.test' } }, 1) as { hash: string };
   const b = await parseIncoming({ id: 'a', title: 't', payload: { link: 'https://x.test', meta: { do: 'pay' } } }, 1) as { hash: string };
   assert.equal(a.hash, b.hash);

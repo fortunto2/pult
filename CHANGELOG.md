@@ -10,6 +10,13 @@ Semantic versions. A core change is made here first; a private layer bumps its s
 - Front hooks: `Extension.fence`, `Extension.ownerMessage` (with `MessageCtx`), route auth `tma_user`, `ctx.user` on `tma` routes; `createApp` options `strings`, `menu`, `replyKeyboard`, `hourlyCron`, `appAssets`; `RICH=0` plain-text switch in `grammyTg(api, rich)`. `docs/extending.md` lists them.
 - `bot-item`: `--answers --money --hard-due --hold --direct`, `reply-draft`, `flag`, `seen`, `now`, `tg://user?id=` card links; plugin hooks `item_args`, `item_gate`, `item_payload`, `item_after` and `item_commands` carry a private feed's rules (contract, mutes, reap) without a fork.
 - `session-run` and `tg-channel`: every sentence the owner reads goes through `pult.i18n` (plugin `strings()`); plugin `draft_rules()` and `agent_rules()` extend the fixed rules.
+The card layer of the private bot, generic and neutral.
+
+- Cards: held and folded cards (one note behind the cap, `hold: true` on POST), the sweep with a daily cap of today-cards, ring and bump, `origin_user`, the roll and digest views, the button grammar and its taps (done with a one-minute undo, "not needed" with a reason menu, later with a day picker), protected days, the standup's "hanging" line.
+- Replies and drafts: the reply button (`rp`), a mail draft on the card with send on confirm (`send_draft`, `sy_`, `sn`, `fix_draft`; the send itself is a queue event, the core never talks to Gmail), a chat reply to copy, `POST /items/:id/draft` and `/reply-draft`, `/owner/draft-send*`, `DRAFT_SENDS_PER_DAY`.
+- One string table (`strings.ts`) holds every user-facing word, English by default; `locales/ru.ts` is a complete Russian map. `cardconfig.ts` carries what a deployment decides: groups, glyphs, reply groups, the card's own verbs, unmutable ids, account labels, `onAction`, `filterOps`, `todayCap`.
+- Migration `core:0002_cards` is additive and idempotent: it adds `origin_user`, `bumped_at`, `held`, `folded_at` only where missing (pragma check) and creates `draft_sends`, so it is a no-op on a database that already has them.
+- `handleCallback` now takes the owner id as its third argument and an `opts` object (`sessions`, `sendCap`).
 
 ## 0.3.1 (2026-11-19)
 

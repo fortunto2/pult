@@ -4,7 +4,7 @@ import type { Incoming, Item } from './contract.ts';
 import { sweepItem, tomorrowMorning, transition, unwork, upsert, work } from './fsm.ts';
 
 const H = 3600e3;
-const inc = (o: Partial<Incoming> = {}): Incoming => ({ id: 'a', kind: 'decision', urgency: 'today', title: 'T', body: '', actions: ['done', 'drop', 'snooze_1h', 'snooze_tomorrow'], payload: null, source: null, expires_at: null, hash: 'h1', short: 's', loud: false, custom: [], ...o });
+const inc = (o: Partial<Incoming> = {}): Incoming => ({ id: 'a', kind: 'decision', urgency: 'today', title: 'T', body: '', actions: ['done', 'drop', 'snooze_1h', 'snooze_tomorrow'], payload: null, source: null, expires_at: null, origin_user: null, hash: 'h1', short: 's', loud: false, custom: [], ...o });
 const live = (o: Partial<Item> = {}): Item => upsert(null, inc(), 1, 1000).item && { ...upsert(null, inc(), 1, 1000).item, ...o };
 
 test('insert, then the same content is a touch, changed content updates in place', () => {

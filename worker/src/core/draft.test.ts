@@ -58,12 +58,12 @@ test('an unknown draft id falls back to /stop semantics', async () => {
 });
 
 const item = (o: Partial<Item> = {}): Item => ({ user_id: 1, id: 'c', short: 'abcdef0123', kind: 'decision', urgency: 'today', state: 'new', first_seen: 0, last_seen: 0, shown_at: null, snooze_until: null, expires_at: null, closed_at: null, source: null,
-  title: 't', body: '', actions: ['done', 'snooze_1h', 'drop'], payload: null, hash: 'h', tg_message_id: null, msg_state: 'none', rendered_hash: null, loud: false, working: null, custom: [], ...o });
+  title: 't', body: '', actions: ['done', 'snooze_1h', 'drop'], payload: null, hash: 'h', tg_message_id: null, msg_state: 'none', rendered_hash: null, loud: false, loud_sent_at: null, bumped_at: null, origin_user: null, working: null, custom: [], ...o });
 
 test('button styles: done by urgency, not needed red, later default; copy_text for a command', () => {
   const rows = keyboard(item({ kind: 'decision', urgency: 'week', payload: { copy: 'make deploy' } })).inline_keyboard.flat() as any[];
   assert.equal(rows.find(b => /Done/.test(b.text)).style, 'success');
-  assert.equal(rows.find(b => /Not needed/.test(b.text)).style, 'danger');
+  assert.equal(rows.find(b => /Not needed/.test(b.text)).style, undefined);   // the grammar's drop button is plain; its reason menu follows
   assert.equal(rows.find(b => /Later|hour/i.test(b.text)).style, undefined);
   assert.deepEqual(rows.find(b => b.copy_text).copy_text, { text: 'make deploy' });
 });

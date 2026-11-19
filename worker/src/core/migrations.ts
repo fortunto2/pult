@@ -9,6 +9,17 @@ export interface Migration { id: string; sql?: string | string[]; addColumns?: A
 
 export const CORE_MIGRATIONS: Migration[] = [
   { id: 'core:0001_init', sql: SCHEMA_0001 },
+  { id: 'core:0002_cards', addColumns: [
+    { table: 'items', column: 'origin_user', ddl: 'INTEGER' }, { table: 'items', column: 'bumped_at', ddl: 'INTEGER' },
+    { table: 'items', column: 'held', ddl: 'INTEGER NOT NULL DEFAULT 0' }, { table: 'items', column: 'folded_at', ddl: 'INTEGER' },
+  ], sql: [   // card hygiene and ring columns (a live database already has them), the send-on-confirm table
+    `CREATE TABLE IF NOT EXISTS draft_sends (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, item_id TEXT NOT NULL, account TEXT NOT NULL, draft_id TEXT NOT NULL, hash TEXT NOT NULL,
+      to_addr TEXT NOT NULL, cc TEXT, subject TEXT, state TEXT NOT NULL, reason TEXT, gmail_id TEXT, event_id INTEGER,
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, sent_at INTEGER, UNIQUE (draft_id, hash))`,
+    'CREATE INDEX IF NOT EXISTS draft_sends_day ON draft_sends (created_at)',
+    'CREATE INDEX IF NOT EXISTS items_kind_first_seen ON items (kind, first_seen)',
+  ] },
   // Who holds a lease and since when: the slots of an extension and the heartbeat ceiling need them. Both exist already on a database that grew them elsewhere.
   { id: 'core:0003_lease_columns', addColumns: [{ table: 'events', column: 'lease_started', ddl: 'INTEGER' }, { table: 'events', column: 'leased_by', ddl: 'TEXT' }] },
   // Later core changes are appended here as `core:NNNN_name`, additive only, and never edit an entry that has shipped.

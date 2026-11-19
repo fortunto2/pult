@@ -61,7 +61,7 @@ export async function applyOps(tg: Tg, db: D1Database, ops: Op[], now: number, s
         try {
           const id = await tg.send(chat, { text: op.text!, pm: op.pm }, op.markup, !!op.silent);
           if (op.replaces) await tg.delete(chat, op.replaces).catch(() => undefined);  // the old message goes only after the new one is out; past 48 h it stays
-          await markSent(db, op.item, id, op.key!, now, !op.silent);
+          await markSent(db, op.item, id, op.key!, now, !op.silent, op.effect === 'bump');
         } catch (e) { await releaseClaim(db, op.item); throw e; }
       } else if (op.kind === 'edit') {
         try { await tg.edit(chat, op.message_id!, { text: op.text!, pm: op.pm }, op.markup); }

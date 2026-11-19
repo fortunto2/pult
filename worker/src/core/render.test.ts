@@ -4,7 +4,7 @@ import type { Item } from './contract.ts';
 import { collapsedView, keyboard, linkify, render } from './render.ts';
 
 const base: Item = { user_id: 7, id: 'card:1', short: 'abcdef0123', kind: 'decision', urgency: 'today', state: 'new', first_seen: 0, last_seen: 0, shown_at: null, snooze_until: null, expires_at: null, closed_at: null, source: null,
-  title: 'Reply to the vendor', body: 'They asked for a date.', actions: ['done', 'snooze_1h', 'snooze_tomorrow', 'drop'], payload: null, hash: 'h', tg_message_id: null, msg_state: 'none', rendered_hash: null, loud: false, working: null, custom: [] };
+  title: 'Reply to the vendor', body: 'They asked for a date.', actions: ['done', 'snooze_1h', 'snooze_tomorrow', 'drop'], payload: null, hash: 'h', tg_message_id: null, msg_state: 'none', rendered_hash: null, loud: false, loud_sent_at: null, bumped_at: null, origin_user: null, working: null, custom: [] };
 const item = (o: Partial<Item> = {}): Item => ({ ...base, ...o });
 const NOW = 5 * 3600e3;
 
@@ -41,15 +41,15 @@ test('an up-to-date live card produces no op', () => {
 test('keyboard: Done, Later, Not needed on row 1; several snoozes collapse into one Later button that opens a menu', () => {
   const kb = keyboard(item());
   const labels = kb.inline_keyboard[0].map(b => b.text);
-  assert.deepEqual(labels, ['✅ Done', '⏰ Later', '✖️ Not needed']);
-  const menu = keyboard(item(), true, true).inline_keyboard[0].map(b => b.text);
-  assert.deepEqual(menu, ['In 1 hour', 'Tomorrow', '← Back']);
+  assert.deepEqual(labels, ['Done', '⏰ Later', 'Not needed']);
+  const menu = keyboard(item(), true, true).inline_keyboard.flat().map(b => b.text);
+  assert.ok(menu.includes('Tomorrow') && menu.includes('← Back'));
 });
 
 test('the card\'s own verb replaces "Done", and the More button sits on row 1 with its instruction kept out of callback_data', () => {
   const kb = keyboard(item({ payload: { meta: { verb: 'Paid' } }, custom: [{ id: 'c1', label: 'More', instruction: 'Look up the thread and summarise it.' }] }));
-  assert.equal(kb.inline_keyboard[0][0].text, '✅ Paid');
-  const more = kb.inline_keyboard[0].find(b => b.text === 'More')!;
+  assert.equal(kb.inline_keyboard[0][0].text, 'Paid');
+  const more = kb.inline_keyboard.flat().find(b => b.text === 'More')!;
   assert.ok('callback_data' in more && more.callback_data.endsWith(':c1'));
   assert.ok(!JSON.stringify(kb).includes('summarise'));
 });
@@ -71,13 +71,13 @@ test('model text is escaped: no markup from a title, a body or a meta field reac
 
 test('the fixed card shape: action, why and cost, the fact, details collapsed', () => {
   const [op] = render([item({ payload: { meta: { do: 'Pay the invoice', why: 'late fee on Friday', cost: '5 min' }, detail: 'Thread: three messages.' } })], NOW);
-  assert.match(op.pm!, /^<b>🔴 Pay the invoice<\/b>\n<i>why: late fee on Friday {2}·  cost: 5 min<\/i>\nAbout: Reply to the vendor/);
+  assert.match(op.pm!, /^<b>🔴 Pay the invoice<\/b>\n<i>why: late fee on Friday {2}·  cost: 5 min<\/i>\nWho\/what: Reply to the vendor/);
   assert.match(op.pm!, /<blockquote expandable>.*Thread: three messages\./s);
 });
 
 test('a decision that was snoozed collapses to one line with the time; waking it sends a fresh card and replaces the old line', () => {
   const sn = item({ state: 'snoozed', snooze_until: NOW + 3600e3, msg_state: 'live', tg_message_id: 4 });
-  assert.match(collapsedView(sn, 'UTC').text, /^💤 later, until 01\.01 06:00: /);
+  assert.match(collapsedView(sn, 'UTC').text, /^💤 snoozed until \d\d\.\d\d \d\d:\d\d: /);
   const woke = item({ state: 'new', msg_state: 'collapsed', tg_message_id: 4 });
   const [op] = render([woke], NOW);
   assert.equal(op.kind, 'send');

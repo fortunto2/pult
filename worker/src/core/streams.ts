@@ -23,3 +23,13 @@ export async function supersede(db: D1Database, userId: number, id: string, now:
   }
   return closed;
 }
+
+/** The safety net behind `supersede` (hourly, and the item CLI's reap): per stream the newest open note stays, every older open one is closed. Returns the ids closed. */
+export async function sweepStreams(db: D1Database, userId: number, now: number): Promise<string[]> {
+  const { results } = await db.prepare("SELECT id FROM items WHERE user_id = ? AND state IN ('new','shown') AND kind IN ('inbox','digest','incident')").bind(userId).all<{ id: string }>();
+  const newest = new Map<string, string>();
+  for (const r of results) { const st = streamOf(r.id); if (st && (newest.get(st) ?? '') < r.id) newest.set(st, r.id); }
+  const closed: string[] = [];
+  for (const id of newest.values()) closed.push(...await supersede(db, userId, id, now));
+  return closed;
+}

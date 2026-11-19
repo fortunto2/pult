@@ -25,8 +25,8 @@ test('Done closes the card and collapses its message; a second press says it is 
   assert.equal((await getItem(db, OWNER, 'mail:1'))!.state, 'done');
   const edit = tg.calls.filter(c => c.op === 'edit').at(-1)!;
   assert.match(edit.plain!, /^✓ done:/);
-  assert.deepEqual(edit.markup, { inline_keyboard: [] });
-  assert.equal(await press(db, tg, short, 'done'), 'already handled');
+  assert.deepEqual(edit.markup, { inline_keyboard: [[{ text: '↩︎ Undo', callback_data: callbackData(short, 'un') }]] });   // the grammar leaves one minute of undo
+  assert.equal(await press(db, tg, short, 'done'), 'already closed');
 });
 
 test('Not needed and Later move the state and log who pressed', async () => {
@@ -59,7 +59,7 @@ test('the Later button opens a menu and Back closes it, without any state change
   await reconcile(db, tg, OWNER, NOW, 'UTC', noSleep);
   await press(db, tg, short, 'snooze_menu');
   const m = tg.calls.find(c => c.op === 'markup')!;
-  assert.deepEqual((m.markup as { inline_keyboard: { text: string }[][] }).inline_keyboard[0].map(b => b.text), ['In 1 hour', 'Tomorrow', 'In 3 days', '← Back']);
+  assert.deepEqual((m.markup as { inline_keyboard: { text: string }[][] }).inline_keyboard[0].map(b => b.text), ['Tomorrow', 'Mon']);
   assert.equal((await getItem(db, OWNER, 'mail:1'))!.state, 'shown');
 });
 

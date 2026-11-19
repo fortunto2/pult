@@ -69,7 +69,7 @@ export interface Extension<X = object> {
 }
 
 export const CORE_COMMANDS = ['start', 'help', 'commands', 'status', 'new', 'sessions', 'stop', 'open', 'later', 'app', 'appwrite'];
-export const CORE_ACTIONS = ['ask', 'reply', 'c1', 'c2', 'c3'];
+export const CORE_ACTIONS = ['ask', 'reply', 'reply_draft', 'reply_fix', 'send_draft', 'c1', 'c2', 'c3'];
 export const CORE_EVENT_COLUMNS = ['id', 'user_id', 'item_id', 'action', 'created_at', 'priority', 'session_id', 'text', 'files', 'reply_to', 'status', 'attempts', 'stop_requested', 'leased_until', 'lease_id', 'acked_at'];
 export const CORE_CALLBACKS = ['v1:', 'sw:'];
 

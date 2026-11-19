@@ -2,6 +2,7 @@
 // and gets the same worker plus whatever they add (see extension.ts and docs/extending.md).
 import { type Api, Bot, type Context, webhookCallback } from 'grammy';
 import { itemsRoute } from './api.ts';
+import { draftRoute, sendCap } from './drafts-api.ts';
 import { handleCallback } from './callbacks.ts';
 import { cmdNew, cmdSessions, cmdStop, filesOf, inbound, queueItemEvent, statusLine, stopDraft, switchTo } from './chat.ts';
 import type { Env } from './env.ts';
@@ -160,7 +161,7 @@ export function createApp<X extends object = object>(opts: AppOptions<X> = {}): 
         return;
       }
       await handleCallback(env.DB, tgOf(ctx.api), owner, { fromId: ctx.from.id, data, queryId: ctx.callbackQuery.id, name: ctx.from.first_name },
-        now, tz, undefined, async e => { await queueItemEvent(env.DB, owner, e, 1, tz, now); });
+        now, tz, undefined, async e => { await queueItemEvent(env.DB, owner, e, 1, tz, now); }, { sendCap: sendCap(env) });
     });
     // His message is a turn in a session (reply > the target he chose today > the day's main), queued for the runner.
     b.on('message', async ctx => {
@@ -250,6 +251,7 @@ export function createApp<X extends object = object>(opts: AppOptions<X> = {}): 
         if (r) return r;
       }
       if (req.method === 'POST' && u.pathname === '/say') return say((await req.json().catch(() => null)) as SayBody | null, ctx, exts.flatMap(e => (e.say ? [e.say] : [])), kb?.reply_markup);
+      if (u.pathname.startsWith('/owner/draft-send') || /^\/items\/[^/]+\/(draft|reply-draft)$/.test(u.pathname)) { const r = await draftRoute(req, u, env, ctx.tg, ctx.tz); if (r) return r; }
       if (u.pathname.startsWith('/items')) {
         const r = await itemsRoute(req, u, env, ctx.tg, ctx.tz);
         if (r) return r;

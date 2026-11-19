@@ -1,9 +1,11 @@
-// /items for the Mac's scripts (RUN_KEY = owner). Jobs write items, never chat text.
+// /items for the runner's jobs (RUN_KEY = owner). Jobs write items, never chat text.
 import { ACTIONS, KINDS, URGENCIES, type CustomAction, type Incoming, type Kind, type Urgency } from './contract.ts';
 import type { Env } from './env.ts';
 import { reconcile } from './reconcile.ts';
 import { supersede } from './streams.ts';
-import { applyAction, applyExpire, applyUnwork, getItem, itemLog, listItems, setDetail, upsertItem } from './store.ts';
+import { digestLinks } from './digest.ts';
+import { parseMeta, parseRoll } from './roll.ts';
+import { applyAction, applyExpire, applyUnwork, getItem, itemLog, listItems, setDetail, setUrgency, upsertItem } from './store.ts';
 import type { Tg } from './tg.ts';
 
 const hex = async (s: string) => [...new Uint8Array(await crypto.subtle.digest('SHA-1', new TextEncoder().encode(s)))].map(b => b.toString(16).padStart(2, '0')).join('');
@@ -23,15 +25,6 @@ function parseCustom(raw: unknown): CustomAction[] | string {
   return out;
 }
 
-const cut = (v: unknown, n: number) => (typeof v === 'string' && v.trim() ? v.replace(/\s+/g, ' ').trim().slice(0, n) : undefined);
-/** The card's contract fields (do, why, cost, verb), cut to length. Nothing a model writes here reaches the HTML as markup: render escapes it. */
-export function parseMeta(x: unknown): Record<string, string> | null {
-  if (!x || typeof x !== 'object') return null;
-  const m = x as Record<string, unknown>, out: Record<string, string> = {};
-  for (const [k, n] of [['do', 90], ['why', 160], ['cost', 160], ['verb', 16]] as const) { const v = cut(m[k], n); if (v) out[k] = v; }
-  return Object.keys(out).length ? out : null;
-}
-
 /** Validate a job's body into an Incoming, or return the reason for a 400. */
 export async function parseIncoming(raw: unknown, userId: number): Promise<Incoming | string> {
   const b = (raw ?? {}) as Record<string, unknown>;
@@ -41,7 +34,7 @@ export async function parseIncoming(raw: unknown, userId: number): Promise<Incom
   const kind = (b.kind ?? 'decision') as Kind, urgency = (b.urgency ?? 'today') as Urgency;
   if (!KINDS.includes(kind)) return 'kind: unknown';
   const body = b.body === undefined ? '' : b.body;
-  const maxBody = kind === 'inbox' || kind === 'digest' ? 3500 : 3000;   // one Telegram message holds 4096
+  const maxBody = kind === 'inbox' || kind === 'digest' ? 30000 : 3000;  // a rich message holds 32768
   if (typeof body !== 'string' || body.length > maxBody) return `body: string up to ${maxBody} chars`;
   if (!URGENCIES.includes(urgency)) return 'urgency: unknown';
   const actions = b.actions === undefined ? DEFAULT_ACTIONS[kind] : b.actions;
@@ -50,10 +43,12 @@ export async function parseIncoming(raw: unknown, userId: number): Promise<Incom
   if (expires !== null && !Number.isFinite(expires)) return 'expires_at: epoch ms';
   let payload = b.payload ?? null;
   if (payload !== null && typeof payload !== 'object') return 'payload: object';
-  // `meta` stays OUT of the hash, so adding it to a card the owner already handled does not reopen it (the store refreshes it on a touch instead)
+  // `meta` (do, why, cost, due: the card's contract fields) and `roll` (a roll-up's sections) are sanitised here; `meta` stays OUT of the hash, so adding it to a card the owner already
+  // handled does not reopen it (the store refreshes it on a touch instead)
   if (payload) {
     const p = { ...(payload as Record<string, unknown>) };
     if ('meta' in p) { const m = parseMeta(p.meta); if (m) p.meta = m; else delete p.meta; }
+    if ('roll' in p) { const r = parseRoll(p.roll); if (r) p.roll = r; else delete p.roll; }
     payload = Object.keys(p).length ? p : null;
   }
   const hashPayload = payload ? (({ meta: _m, ...rest }) => (Object.keys(rest).length ? rest : null))(payload as Record<string, unknown>) : null;
@@ -62,22 +57,30 @@ export async function parseIncoming(raw: unknown, userId: number): Promise<Incom
   const custom = parseCustom(b.custom_actions);
   if (typeof custom === 'string') return custom;
   return { id, kind, urgency, title: title.trim(), body, actions: acts, payload, source: typeof b.source === 'string' ? b.source.slice(0, 60) : null,
-    expires_at: expires as number | null, loud, custom, hash: await hex(JSON.stringify([title.trim(), body, hashPayload, acts, kind, loud, custom])), short: (await hex(`${userId}:${id}`)).slice(0, 10) };
+    expires_at: expires as number | null, origin_user: null,
+    loud, custom, held: b.hold === true, hash: await hex(JSON.stringify([title.trim(), body, hashPayload, acts, kind, loud, custom])), short: (await hex(`${userId}:${id}`)).slice(0, 10) };
 }
 
+export { parseMeta };
 const json = (o: unknown, status = 200) => Response.json(o, { status });
-const publicItem = ({ short: _s, rendered_hash: _r, ...i }: Awaited<ReturnType<typeof getItem>> & object) => i;
 
 export async function itemsRoute(req: Request, u: URL, env: Env, tg: Tg, tz: string, now = Date.now(), sleep?: (ms: number) => Promise<void>): Promise<Response | null> {
   if (u.pathname !== '/items' && !u.pathname.startsWith('/items/')) return null;
   const owner = Number(env.CHAT_ID);
   if (req.method === 'GET' && u.pathname === '/items') {
+    const user = u.searchParams.get('user');
+    if (user && Number(user) !== owner) return json({ error: 'RUN_KEY reads owner items only' }, 403);
     const items = await listItems(env.DB, owner, { state: u.searchParams.get('state') ?? undefined, kind: u.searchParams.get('kind') ?? undefined });
-    return json(items.map(publicItem));
+    return json(items.map(({ short: _s, rendered_hash: _r, ...i }) => i));
   }
   if (req.method === 'POST' && u.pathname === '/items') {
     const inc = await parseIncoming(await req.json().catch(() => null), owner);
     if (typeof inc === 'string') return json({ error: inc }, 400);
+    if (inc.kind === 'digest' || inc.kind === 'inbox') {   // keep every link a digest ever carried, so a re-listed item (e.g. moved to a "hanging" section) still renders it
+      const prev = await getItem(env.DB, owner, inc.id);
+      const links = digestLinks((prev?.payload as { links?: unknown } | null)?.links, prev?.body ?? null, inc.body);
+      if (Object.keys(links).length) inc.payload = { ...(inc.payload as object | null ?? {}), links };
+    }
     const r = await upsertItem(env.DB, owner, inc, now, 'job');
     let errors: string[] = [];
     if (r.kind === 'insert') await supersede(env.DB, owner, inc.id, now);   // a new note of a stream closes the earlier ones before the render
@@ -100,7 +103,17 @@ export async function itemsRoute(req: Request, u: URL, env: Env, tg: Tg, tz: str
   }
   if (req.method === 'GET' && /^\/items\/[^/]+$/.test(u.pathname)) {
     const item = await getItem(env.DB, owner, decodeURIComponent(u.pathname.split('/')[2]));
-    return item ? json(publicItem(item)) : json({ error: 'no such item' }, 404);
+    return item ? json((({ short: _s, rendered_hash: _r, ...i }) => i)(item)) : json({ error: 'no such item' }, 404);
+  }
+  const mu = /^\/items\/([^/]+)\/urgency$/.exec(u.pathname);
+  if (req.method === 'POST' && mu) {   // the today cap (bot-item reap): a card beyond the cap moves to `week`
+    const item = await getItem(env.DB, owner, decodeURIComponent(mu[1]));
+    const urgency = ((await req.json().catch(() => ({}))) as { urgency?: string }).urgency;
+    if (!item) return json({ error: 'no such item' }, 404);
+    if (!urgency || !(URGENCIES as readonly string[]).includes(urgency)) return json({ error: 'urgency: now, today or week' }, 400);
+    const ok = await setUrgency(env.DB, item, urgency, now, 'job');
+    if (ok) await reconcile(env.DB, tg, owner, now, tz, sleep);
+    return json({ id: item.id, changed: ok, urgency: ok ? urgency : item.urgency });
   }
   const m = /^\/items\/([^/]+)\/state$/.exec(u.pathname);
   if (req.method === 'POST' && m) {
@@ -111,7 +124,8 @@ export async function itemsRoute(req: Request, u: URL, env: Env, tg: Tg, tz: str
     if (!action && state !== 'new' && state !== 'expired') return json({ error: "state: 'done', 'dropped', 'expired' (an incident whose check is green again, a meeting that is over) or 'new' (the run failed: back on the list)" }, 400);
     const item = await getItem(env.DB, owner, id);
     if (!item) return json({ error: 'no such item' }, 404);
-    if (state === 'expired') {   // job-owned streams only: a decision card is never expired by a script without a reason
+    if (state === 'expired') {   // job-owned streams only: a decision card is never expired by a script
+      // a decision card may be expired only with a reason: its source is gone (todo done or parked, mail answered), the one line is kept in the item's log
       if (item.kind !== 'incident' && item.kind !== 'meeting' && !(item.kind === 'decision' && reason)) return json({ error: 'expired: incident and meeting items; a decision only with a reason' }, 400);
       const gone = await applyExpire(env.DB, item, now, 'job', reason || undefined);
       if (gone) await reconcile(env.DB, tg, owner, now, tz, sleep);
