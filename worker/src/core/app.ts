@@ -1,6 +1,8 @@
 // createApp({ extensions }): the whole worker as a library. The core's own src/index.ts is createApp({ extensions: [] }); a private layer calls it with its extensions
 // and gets the same worker plus whatever they add (see extension.ts and docs/extending.md).
 import { type Api, Bot, type Context, webhookCallback } from 'grammy';
+import type { UserFromGetMe } from 'grammy/types';
+import { configureCards, type CardConfig } from './cardconfig.ts';
 import { itemsRoute } from './api.ts';
 import { draftRoute, sendCap } from './drafts-api.ts';
 import { handleCallback } from './callbacks.ts';
@@ -60,6 +62,14 @@ export interface AppOptions<X> {
   /** Serves the Mini App page from your own assets: given the path (`/app/...`), return a Response or null to fall through to the core page. */
   /** Keeps a private bot's old URLs alive: a request path starting with a key is routed as if it started with the value (e.g. `{ '/owner/': '/x/family/owner/' }`), so scripts and devices that already call the old paths need no change. Longest key wins. */
   pathAliases?: Record<string, string>;
+  /** The owner's zone when it is not a fixed variable (the Mac reports it, a stored row, a trip). Called once per request or tick; default: env.OWNER_TZ, else UTC. */
+  ownerTz?: (env: Env & X) => Promise<string>;
+  /** Lays live switches over the deploy-time environment once per request or tick (stored rows over variables). Return the env to use. */
+  withEnv?: (env: Env & X) => Promise<Env & X>;
+  /** The bot's own identity, so grammY does not call getMe on a cold start. */
+  botInfo?: UserFromGetMe;
+  /** What this deployment decides about its cards: groups, glyphs, the reply button's groups, extra rows, a last word on a render's ops, the daily cap. See cardconfig.ts. */
+  cards?: Partial<CardConfig>;
   appAssets?: (path: string, env: Env & X) => Response | null | Promise<Response | null>; /** user-facing sentences in your language; keys you leave out stay English (core/strings.ts) */ strings?: Record<string, string> }
 export interface App<X> {
   fetch(req: Request, env: Env & X): Promise<Response>;
@@ -71,6 +81,8 @@ export function createApp<X extends object = object>(opts: AppOptions<X> = {}): 
   const kb = opts.replyKeyboard ? { reply_markup: { keyboard: opts.replyKeyboard.map(r => r.map(text => ({ text }))), resize_keyboard: true, is_persistent: true } } : undefined;
   validate(exts as Extension<never>[]);
   setStrings(opts.strings ?? {});
+  if (opts.cards) configureCards(opts.cards);
+  const tzOf = async (env: Env & X) => (opts.ownerTz ? await opts.ownerTz(env).catch(() => ownerTz(env)) : ownerTz(env));
   setEventColumns(Object.assign({}, ...exts.map(e => e.eventColumns ?? {})));
   setQueueHooks(exts.flatMap(e => (e.queue ? [e.queue] : [])));
   const migrations = [...CORE_MIGRATIONS, ...exts.flatMap(e => e.migrations ?? [])];
@@ -80,15 +92,15 @@ export function createApp<X extends object = object>(opts: AppOptions<X> = {}): 
     if (!p) { p = migrate(env.DB, migrations); ready.set(env.DB, p); p.catch(() => ready.delete(env.DB)); }
     return p;
   };
-  const botOf = (env: Env) => new Bot(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_API_ROOT ? { client: { apiRoot: env.TELEGRAM_API_ROOT } } : {});
-  const ctxOf = (env: Env & X, api: Api, now = Date.now()): AppCtx<X> => ({ env, db: env.DB, tg: grammyTg(api, env.RICH !== '0'), api, owner: Number(env.CHAT_ID), tz: ownerTz(env), now });
+  const botOf = (env: Env) => new Bot(env.TELEGRAM_BOT_TOKEN, { ...(opts.botInfo ? { botInfo: opts.botInfo } : {}), ...(env.TELEGRAM_API_ROOT ? { client: { apiRoot: env.TELEGRAM_API_ROOT } } : {}) });
+  const ctxOf = (env: Env & X, api: Api, now = Date.now(), tz = ownerTz(env)): AppCtx<X> => ({ env, db: env.DB, tg: grammyTg(api, env.RICH !== '0'), api, owner: Number(env.CHAT_ID), tz, now });
   const commands = exts.flatMap(e => e.commands ?? []);
   const callbacks = exts.flatMap(e => e.callbacks ?? []);
   const actions = Object.assign({}, ...exts.map(e => e.queueActions ?? {})) as Record<string, NonNullable<Extension<X>['queueActions']>[string]>;
   const help = [HELP, ...exts.map(e => e.help).filter(Boolean), ...commands.map(c => `/${c.name}: ${c.description}`)].join('\n');
 
-  function handlers(b: Bot, env: Env & X) {
-    const owner = Number(env.CHAT_ID), tz = ownerTz(env), tgOf = (api: Api) => grammyTg(api, env.RICH !== '0');
+  function handlers(b: Bot, env: Env & X, tz: string) {
+    const owner = Number(env.CHAT_ID), tgOf = (api: Api) => grammyTg(api, env.RICH !== '0');
     // The stop button on a streamed draft. Its update has no `from`; the chat is the owner's private chat or nothing happens.
     b.use(async (ctx, next) => {
       const g = (ctx.update as { stopped_message_generation?: { chat?: { id?: number }; draft_id?: number } }).stopped_message_generation;
@@ -100,18 +112,24 @@ export function createApp<X extends object = object>(opts: AppOptions<X> = {}): 
     });
     // An extension may fence updates off before anything else looks at them (business connections, bots, an experiment).
     b.use(async (ctx, next) => {
-      for (const e of exts) if (e.fence && await Promise.resolve(e.fence(ctxOf(env, ctx.api), ctx.update)).catch(err => { console.error(`extension ${e.name}: fence failed`, err); return false; })) return;
+      for (const e of exts) if (e.fence && await Promise.resolve(e.fence(ctxOf(env, ctx.api, Date.now(), tz), ctx.update)).catch(err => { console.error(`extension ${e.name}: fence failed`, err); return false; })) return;
       await next();
     });
     // Only the owner reaches anything below: CHAT_ID is his private chat with the bot, and a private chat's id is its user's id.
     // Everyone else, groups, channels and other bots get no answer at all.
     b.use(async (ctx, next) => {
       if (!ctx.from || ctx.from.is_bot || ctx.from.id !== owner || ctx.chat?.id !== owner) {
-        for (const e of exts) if (e.outsiders && await e.outsiders(ctxOf(env, ctx.api), ctx.update).catch(err => { console.error(`extension ${e.name}: outsiders failed`, err); return false; })) return;
+        for (const e of exts) if (e.outsiders && await e.outsiders(ctxOf(env, ctx.api, Date.now(), tz), ctx.update).catch(err => { console.error(`extension ${e.name}: outsiders failed`, err); return false; })) return;
         return;
       }
       await next();
     });
+    const runCommand = (c: NonNullable<Extension<X>['commands']>[number]) => async (ctx: Context) => {
+      const base = ctxOf(env, ctx.api, Date.now(), tz);
+      await c.run({ ...base, args: String(ctx.match ?? ''), replyToMessageId: ctx.message?.reply_to_message?.message_id,
+        reply: async (text, markup) => { await ctx.reply(text, markup ? { reply_markup: markup as never } : undefined); } });
+    };
+    for (const c of commands.filter(c => c.override)) b.command(c.name, runCommand(c));   // before the core's own, so the first match wins
     b.command('start', ctx => ctx.reply(S.start, kb));
     b.command(['help', 'commands'], ctx => ctx.reply(help, kb));
     b.command('status', async ctx => { await ctx.reply(await statusLine(env, Date.now(), tz), kb); });
@@ -145,20 +163,14 @@ export function createApp<X extends object = object>(opts: AppOptions<X> = {}): 
     };
     b.command('open', list('open'));
     b.command('later', list('snoozed'));
-    for (const c of commands) {   // extension commands: same owner gate, run with the core's context
-      b.command(c.name, async ctx => {
-        const base = ctxOf(env, ctx.api);
-        await c.run({ ...base, args: String(ctx.match ?? ''), replyToMessageId: ctx.message?.reply_to_message?.message_id,
-          reply: async (text, markup) => { await ctx.reply(text, markup ? { reply_markup: markup as never } : undefined); } });
-      });
-    }
+    for (const c of commands.filter(c => !c.override)) b.command(c.name, runCommand(c));   // extension commands: same owner gate, run with the core's context
     b.on('callback_query:data', async ctx => {
       const now = Date.now(), data = ctx.callbackQuery.data;
       if (data.startsWith('sw:')) { await ctx.answerCallbackQuery({ text: await switchTo(env, owner, data.slice(3), now, tz) }); return; }
       const ext = callbacks.find(c => data.startsWith(c.prefix));
       if (ext) {
         const answer = async (text: string) => { await ctx.answerCallbackQuery({ text }).catch(() => undefined); };
-        try { await ext.run({ ...ctxOf(env, ctx.api, now), data: data.slice(ext.prefix.length), queryId: ctx.callbackQuery.id, fromId: ctx.from.id, messageId: ctx.callbackQuery.message?.message_id, answer }); }
+        try { await ext.run({ ...ctxOf(env, ctx.api, now, tz), data: data.slice(ext.prefix.length), queryId: ctx.callbackQuery.id, fromId: ctx.from.id, messageId: ctx.callbackQuery.message?.message_id, answer }); }
         catch (e) { console.error(`callback ${ext.prefix} failed`, e); await answer(S.callbackFailed); }
         return;
       }
@@ -169,7 +181,7 @@ export function createApp<X extends object = object>(opts: AppOptions<X> = {}): 
     b.on('message', async ctx => {
       const m = ctx.message, now = Date.now();
       if (ctx.chat.type !== 'private') return;
-      const msgCtx: MessageCtx<X> = { ...ctxOf(env, ctx.api, now), message: m, text: m.text ?? m.caption ?? '', forwarded: !!m.forward_origin, replyToMessageId: m.reply_to_message?.message_id,
+      const msgCtx: MessageCtx<X> = { ...ctxOf(env, ctx.api, now, tz), message: m, text: m.text ?? m.caption ?? '', forwarded: !!m.forward_origin, replyToMessageId: m.reply_to_message?.message_id,
         reply: async (text, o) => (await ctx.reply(text, { ...(o?.markup ? { reply_markup: o.markup as never } : {}), ...(o?.silent ? { disable_notification: true } : {}), ...(o?.replyTo === null ? {} : { reply_parameters: { message_id: o?.replyTo ?? m.message_id, allow_sending_without_reply: true } }) }).catch(() => undefined))?.message_id,
         react: async emoji => { await ctx.react(emoji as never).catch(() => undefined); } };
       for (const e of exts) if (e.ownerMessage && await e.ownerMessage(msgCtx).catch(err => { console.error(`extension ${e.name}: ownerMessage failed`, err); return false; })) return;
@@ -217,30 +229,33 @@ export function createApp<X extends object = object>(opts: AppOptions<X> = {}): 
   }
 
   return {
-    async scheduled(ev, env, execCtx) {
+    async scheduled(ev, rawEnv, execCtx) {
       execCtx.waitUntil((async () => {
+        const env = opts.withEnv ? await opts.withEnv(rawEnv) : rawEnv;
         await ensure(env);
-        const api = botOf(env).api, ctx = ctxOf(env, api);
+        const api = botOf(env).api, ctx = ctxOf(env, api, Date.now(), await tzOf(env));
         if (!opts.hourlyCron || ev.cron === opts.hourlyCron) await hourly(env, ctx.tg, ctx.tz).catch(err => console.error('hourly sweep failed', err));
         for (const e of exts) if (e.scheduled) await e.scheduled(ctx, ev).catch(err => console.error(`extension ${e.name}: scheduled failed`, err));
       })().catch(err => console.error('scheduled failed', err)));
     },
-    async fetch(req, env) {
+    async fetch(req, rawEnv) {
       const u = new URL(req.url);
       const alias = Object.keys(opts.pathAliases ?? {}).filter(k => u.pathname.startsWith(k)).sort((a, b) => b.length - a.length)[0];
       if (alias) u.pathname = opts.pathAliases![alias] + u.pathname.slice(alias.length);
-      setButtonOptions(env);
-      const own = req.method === 'GET' && u.pathname.startsWith('/app') && opts.appAssets ? await opts.appAssets(u.pathname, env) : null;
+      setButtonOptions(rawEnv);
+      const own = req.method === 'GET' && u.pathname.startsWith('/app') && opts.appAssets ? await opts.appAssets(u.pathname, rawEnv) : null;
       const asset = own ?? (req.method === 'GET' ? appAsset(u.pathname) : null);
       if (asset) return asset;
+      if (u.pathname === '/tg' && req.method === 'POST' && !rawEnv.TG_SECRET) return new Response('webhook secret not configured', { status: 503 });   // fail closed: an empty secret would mean no verification
+      const env = opts.withEnv ? await opts.withEnv(rawEnv) : rawEnv;
       await ensure(env);
+      const tz = await tzOf(env);
       if (u.pathname === '/tg' && req.method === 'POST') {
-        if (!env.TG_SECRET) return new Response('webhook secret not configured', { status: 503 });   // fail closed: an empty secret would mean no verification
         const b = botOf(env);
-        handlers(b, env);
+        handlers(b, env, tz);
         return webhookCallback(b, 'cloudflare-mod', { secretToken: env.TG_SECRET })(req);
       }
-      const api = botOf(env).api, ctx = ctxOf(env, api);
+      const api = botOf(env).api, ctx = ctxOf(env, api, Date.now(), tz);
       const app = await appRoute(req, u, ctx, exts);   // the Mini App API: its own auth (initData), not the key
       if (app) return app;
       const ex = await extRoute(req, u, env, ctx);
@@ -262,8 +277,8 @@ export function createApp<X extends object = object>(opts: AppOptions<X> = {}): 
         if (r) return r;
       }
       if (u.pathname === '/setup') {   // once after deploy: the command menu, the webhook (same secret the worker checks), the Mini App menu button
-        const extMenu = commands.map(c => ({ command: c.name, description: c.description.slice(0, 256) }));
-        await api.setMyCommands(opts.menu ? opts.menu(COMMANDS, extMenu) : [...COMMANDS, ...extMenu]);
+        const extMenu = commands.map(c => ({ command: c.name, description: c.description.slice(0, 256) })), overridden = new Set(commands.filter(c => c.override).map(c => c.name));
+        await api.setMyCommands(opts.menu ? opts.menu(COMMANDS, extMenu) : [...COMMANDS.filter(c => !overridden.has(c.command)), ...extMenu]);
         await api.setWebhook(`${u.origin}/tg`, { secret_token: env.TG_SECRET, allowed_updates: ['message', 'callback_query', 'stopped_message_generation'] });
         await putSetting(env.DB, 'app:url', u.origin);
         await api.setChatMenuButton({ chat_id: Number(env.CHAT_ID), menu_button: { type: 'web_app', text: S.menuTitle, web_app: { url: `${u.origin}/app/` } } }).catch(() => undefined);

@@ -30,3 +30,10 @@ export { finishSend, claimSend, getSend, listSends, sendsToday, draftOf, replyOf
 export type { ItemEvent } from './core/replies.ts';
 export { pausedUntil, withSettings, setFlag, flagOn } from './core/settings.ts';
 export { authenticate, authenticateUser } from './core/miniapp/api.ts';
+export { RU } from './core/locales/ru.ts';
+export type { Op } from './core/render.ts';
+export { statusLine } from './core/chat.ts';
+export { localDate } from './core/tz.ts';
+export { sweepStreams } from './core/streams.ts';
+export { getProtected, setProtected, protectedToday } from './core/protected.ts';
+export { recentTaps } from './core/store.ts';

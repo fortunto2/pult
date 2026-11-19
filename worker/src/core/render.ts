@@ -47,7 +47,7 @@ export function groupOf(item: Item): string {
   if (g) return g;
   if (item.kind === 'incident') return 'incident';
   if (item.kind === 'meeting') return 'meeting';
-  const m = /^([a-z0-9_-]+)[:\-]/i.exec(item.id);
+  const m = /^([a-z0-9]+)\b/i.exec(item.id);
   return (m && cards.groups[m[1].toLowerCase()]) || 'other';
 }
 const urgencyDot = (u: string) => (u === 'now' || u === 'today' ? '🔴' : u === 'week' ? '🟡' : '');

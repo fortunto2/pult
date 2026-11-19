@@ -23,7 +23,8 @@ export interface RouteCtx<X = object> extends AppCtx<X> { url: URL; params: stri
 export interface Route<X = object> { method: string; path: string | RegExp; auth?: 'key' | 'tma' | 'tma_user' | 'public'; handler(req: Request, ctx: RouteCtx<X>): Promise<Response> }
 
 export interface CommandCtx<X = object> extends AppCtx<X> { args: string; replyToMessageId?: number; reply(text: string, markup?: Markup): Promise<void> }
-export interface Command<X = object> { name: string; description: string; run(c: CommandCtx<X>): Promise<void> }
+/** `override`: this command replaces the core command of the same name (a private layer's own /status, /help, /start). Without it a clash with a core command is an error at createApp(). */
+export interface Command<X = object> { name: string; description: string; override?: boolean; run(c: CommandCtx<X>): Promise<void> }
 
 /** A button whose callback_data starts with `prefix` (e.g. `crm:`). `data` is what follows the prefix. callback_data is never trusted: validate it. */
 export interface CallbackCtx<X = object> extends AppCtx<X> { data: string; queryId: string; fromId: number; messageId?: number; answer(text: string): Promise<void> }
@@ -79,13 +80,17 @@ const NAME = /^[a-z][a-z0-9_]{1,15}$/, CMD = /^[a-z][a-z0-9_]{0,31}$/, PREFIX = 
 
 /** Throws on anything that would collide or escape its namespace. Called once by createApp. */
 export function validate(exts: Extension<never>[]): void {
-  const seen = { name: new Set<string>(), cmd: new Set<string>(CORE_COMMANDS), act: new Set<string>(CORE_ACTIONS), pre: new Set<string>(CORE_CALLBACKS), panel: new Set<string>(), col: new Set<string>() };
+  const seen = { name: new Set<string>(), cmd: new Set<string>(CORE_COMMANDS), act: new Set<string>(CORE_ACTIONS), pre: new Set<string>(CORE_CALLBACKS), panel: new Set<string>(), col: new Set<string>(), over: new Set<string>() };
   const once = (set: Set<string>, v: string, what: string, by: string) => { if (set.has(v)) throw new Error(`extension ${by}: ${what} "${v}" is already taken`); set.add(v); };
   for (const e of exts) {
     if (!NAME.test(e.name)) throw new Error(`extension name "${e.name}": [a-z][a-z0-9_]{1,15}`);
     once(seen.name, e.name, 'name', e.name);
     for (const m of e.migrations ?? []) if (!m.id.startsWith(`${e.name}:`)) throw new Error(`extension ${e.name}: migration id "${m.id}" must start with "${e.name}:"`);
-    for (const c of e.commands ?? []) { if (!CMD.test(c.name)) throw new Error(`extension ${e.name}: command "${c.name}" is not [a-z][a-z0-9_]*`); once(seen.cmd, c.name, 'command', e.name); }
+    for (const c of e.commands ?? []) {
+      if (!CMD.test(c.name)) throw new Error(`extension ${e.name}: command "${c.name}" is not [a-z][a-z0-9_]*`);
+      if (c.override) { if (!CORE_COMMANDS.includes(c.name)) throw new Error(`extension ${e.name}: command "${c.name}" is marked override but is not a core command`); once(seen.over, c.name, 'overriding command', e.name); }
+      else once(seen.cmd, c.name, 'command', e.name);
+    }
     for (const c of e.callbacks ?? []) {
       if (!PREFIX.test(c.prefix)) throw new Error(`extension ${e.name}: callback prefix "${c.prefix}" must look like "abc:"`);
       for (const p of seen.pre) if (p.startsWith(c.prefix) || c.prefix.startsWith(p)) throw new Error(`extension ${e.name}: callback prefix "${c.prefix}" overlaps "${p}"`);
