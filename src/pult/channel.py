@@ -113,7 +113,7 @@ def fetch_files(cfg: Cfg, sid: str, ev: dict) -> list[str]:
             path.write_bytes(call(cfg, "GET", f"/files/{f['file_id']}?event={ev['id']}", raw=True))
             lines.append(tr("channel.file", kind=f.get("kind", "file"), path=path))
         except urllib.error.HTTPError as e:
-            lines.append(f"[file {name}: {tr('channel.too_big') if e.code == 413 else tr('channel.download_failed')}]")
+            lines.append(tr("channel.file_note", name=name, why=tr("channel.too_big") if e.code == 413 else tr("channel.download_failed")))
         except OSError:
             lines.append(tr("channel.download_failed_net", name=name))
     return lines

@@ -53,6 +53,7 @@ DEFAULTS: dict[str, str] = {
     "channel.file": "[file {kind}: {path}]",
     "channel.too_big": "larger than 20 MB, not downloaded",
     "channel.download_failed": "download failed",
+    "channel.file_note": "[file {name}: {why}]",
     "channel.download_failed_net": "[file {name}: download failed, network]",
     "channel.empty": "(empty message)",
     "channel.attached": "Live session attached. Write here, the answer comes from the terminal.",

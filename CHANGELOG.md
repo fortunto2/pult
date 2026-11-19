@@ -4,6 +4,8 @@ Semantic versions. A core change is made here first; a private layer bumps its s
 
 ## Unreleased
 
+- `tg-channel`: the one-line file notes go through the string table (`channel.file_note`), so a translation covers them.
+
 - `lib.ts` also exports `grammyTg` and `itemsRoute` (a private layer builds a Tg for its own sends; tests drive the items route directly).
 
 - Session ages (`5 min`, `2 h`, `1 d`) go through the string table (`agoMin`, `agoHour`, `agoDay`); `locales/ru.ts` now covers every key of the table, queue, sessions and chat included.
