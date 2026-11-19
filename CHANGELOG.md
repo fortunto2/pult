@@ -2,7 +2,9 @@
 
 Semantic versions. A core change is made here first; a private layer bumps its submodule to the tag. The extension API (`worker/src/lib.ts`, `pult.actions`, `pult.plugins`) follows semver: a breaking change to a hook is a major version. Anything under `worker/src/core/` that `lib.ts` does not export is internal and may change in a minor release.
 
-## Unreleased
+## 0.4.0 (2026-11-19)
+
+The core grows to a superset of the private bot's card, queue and front layers, so a private layer is extensions only.
 
 - Mac side, from the private bot's scripts: `bot-say` gains `--roll --photo --doc --issue --keyboard --replace --topic/--thread` (ignored) and `BOT_SAY_LEGACY`/`PULT_SAY_LEGACY`; the wall is `PULT_DENY_FILE` plus plugin `wall()`; new hooks module (`pult.hooks`) and user-text overrides (`pult.i18n`, plugin `strings()`).
 - `/say` is its own module: `key` with `replace`, `photo_b64`, `doc_b64`/`doc_name`, `keyboard`, `issue`/`thread`/`topic` ignored, and an `Extension.say.before` hook. The stop button's tap is answered with a silent line (`stoppingDraft`). Queue-layer texts are in the strings table. Settings: `withSettings`, `setFlag`, `flagOn`; a `PROGRESS_DRAFT=0` row turns drafts off.
