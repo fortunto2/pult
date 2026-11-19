@@ -209,3 +209,11 @@ def test_a_handler_gets_the_card_the_files_and_a_transcript_and_can_reopen_the_c
     assert sr.main_event(sr.Cfg(), ev, reg) == 0
     assert seen["files"] == ["voice"] and "hello from the stub" in seen["text"] and seen["card"] == {"id": "x:1", "title": "T"}
     assert w.acks() == [{"status": "done", "item_result": "done"}] and w.says() == []   # nothing posted on success: the card carries the result
+
+
+def test_tz_label_hook_names_a_zone(monkeypatch):
+    from pult import hooks, items
+
+    assert items.tz_label("Europe/Berlin") == "Berlin"
+    monkeypatch.setattr(hooks, "first", lambda name, *a: "CET" if name == "tz_label" and a == ("Europe/Berlin",) else None)
+    assert items.tz_label("Europe/Berlin") == "CET" and items.tz_label("UTC") == "UTC"

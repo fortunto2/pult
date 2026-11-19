@@ -149,7 +149,7 @@ def format_seen(results: list[dict]) -> list[str]:
 
 
 def tz_label(tz: str) -> str:
-    return tz.split("/")[-1].replace("_", " ")
+    return hooks.first("tz_label", tz) or tz.split("/")[-1].replace("_", " ")
 
 
 def local_now_label() -> str:
