@@ -18,10 +18,11 @@ export interface Tg {
 const NO_PREVIEW = { is_disabled: true };
 const badMarkup = (e: unknown) => /can't parse entities|can't find end|unsupported start tag/i.test(String((e as Error)?.message ?? e));
 
-export const grammyTg = (api: Api): Tg => ({
+/** rich=false (env RICH=0) sends the plain-text twin of every message: one switch for a bad render on a client. */
+export const grammyTg = (api: Api, rich = true): Tg => ({
   send: async (chat, c, markup, silent, replyTo) => {
     const other = { ...(markup ? { reply_markup: markup } : {}), ...(silent ? { disable_notification: true } : {}), ...(replyTo ? { reply_parameters: { message_id: replyTo, allow_sending_without_reply: true } } : {}), link_preview_options: NO_PREVIEW };
-    if (c.pm) {
+    if (c.pm && rich) {
       try { return (await api.sendMessage(chat, c.pm.slice(0, 4096), { ...other, parse_mode: 'HTML' })).message_id; }
       catch (e) { if (!badMarkup(e)) throw e; }   // Telegram refused the entities: the plain twin goes out instead of losing the message
     }
@@ -29,7 +30,7 @@ export const grammyTg = (api: Api): Tg => ({
   },
   edit: async (chat, id, c, markup) => {
     const other = { ...(markup ? { reply_markup: markup } : {}), link_preview_options: NO_PREVIEW };   // an edit without reply_markup REMOVES the keyboard: callers pass it every time
-    if (c.pm) {
+    if (c.pm && rich) {
       try { await api.editMessageText(chat, id, c.pm.slice(0, 4096), { ...other, parse_mode: 'HTML' }); return; }
       catch (e) { if (!badMarkup(e)) throw e; }
     }

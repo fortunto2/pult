@@ -59,9 +59,28 @@ export default createApp<MyEnv>({ extensions: [crm] });     // Env of the whole 
 | `queueActions` | `{ ping: { onAck(ctx, ev, ack) } }` | names you queue with `enqueue(db, { action: 'ping', ... })`; the Mac side's registry runs them; `onAck` runs here when the runner acks (status, body) |
 | `scheduled` | `(ctx, ev) => Promise<void>` | after the core's hourly sweep on every cron trigger; check `ev.cron` if you have several |
 | `panels` | `[{ id, title, data(ctx) }]` | a Mini App tab. `data` returns `{ rows }`, `{ kv }` or `{ text }` and the page renders it with `textContent`: no script of yours reaches the app |
+| `fence` | `(ctx, update) => boolean` | runs first for every update (after the stop-button handler); `true` drops it silently: business connections, bot senders, an experiment fence |
+| `ownerMessage` | `(c) => Promise<boolean>` | the owner's plain private message before it becomes a turn: claim intake, a rest mode, a relayed answer, a reply-keyboard button's text. `c.text`, `c.message`, `c.forwarded`, `c.reply(text, { markup, replyTo, silent })`, `c.react(emoji)`. `true` = handled, nothing is queued |
+| `outsiders` | `(ctx, update) => Promise<boolean>` | every update that is not the owner's private chat: a member's message or **callback press**, a group message, the owner writing in a group. The family seam; sees the raw update, answers through `ctx.api` |
 | `help` | string | a line appended to `/help` |
 
 The context of every hook: `env` (core plus yours), `db` (D1), `tg` (the core's Telegram interface: send, edit, delete, draft), `api` (grammY `Api` for anything else), `owner`, `tz`, `now`. The library exports the helpers extensions usually need from `pult-worker`: `enqueue`, `getSetting`/`putSetting`, `listItems`, `applyAction`, `reconcile`, `resolveSession`, `callbackData`, `mdToTg`, `validateInitData`.
+
+`routes[].auth` also takes `'tma_user'`: a valid Mini App initData of **any** Telegram user (a family member's app); the handler gets `ctx.user.id` and decides what that user may see. `'tma'` stays owner-only and also sets `ctx.user`.
+
+Callback buttons pressed by the owner go to `callbacks` (prefix `abc:` to `abcdefghijklm:`, checked for overlap); presses by anyone else never reach them, they arrive as `callback_query` updates in `outsiders`.
+
+### `createApp` options
+
+| Option | What it does |
+|---|---|
+| `strings` | your language for every user-facing sentence of the core (`core/strings.ts` lists the keys); keys you leave out stay English |
+| `menu(core, ext)` | the slash-command menu `/setup` registers; return the entries you want (hide `/new`, add menu-only entries) |
+| `replyKeyboard` | rows of button texts; a persistent keyboard sent with `/start`, `/help`, `/status`. The taps come back as plain messages: handle them in `ownerMessage` |
+| `hourlyCron` | when set, the core's hourly sweep runs only on that cron trigger; extensions' `scheduled` still run on every trigger (use `ev.cron` for a second, faster one) |
+| `appAssets(path, env)` | serve the Mini App page from your own assets; return `null` to fall through to the core page |
+
+`RICH=0` in the environment makes the worker send the plain-text twin of every message instead of Telegram HTML. An extension's own bindings (a KV namespace, a secret) are typed through `X`: `createApp<{ BEATS: KVNamespace }>`.
 
 ### The worked example
 

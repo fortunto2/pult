@@ -2,7 +2,7 @@
 // Everything an extension registers is namespaced by its name, so two extensions and the core cannot collide: routes live under /x/<name>/,
 // commands and callback prefixes are validated at createApp() time, and a clash throws before the worker serves a single request.
 import type { Api } from 'grammy';
-import type { Update } from 'grammy/types';
+import type { Message, Update } from 'grammy/types';
 import type { Env } from './env.ts';
 import type { Markup, Button } from './render.ts';
 import type { QEvent, QueueHooks } from './queue.ts';
@@ -18,9 +18,9 @@ export interface AppCtx<X = object> {
   tz: string; now: number;
 }
 
-export interface RouteCtx<X = object> extends AppCtx<X> { url: URL; params: string[] /* regexp groups of the sub-path, if the route path is a RegExp */ }
-/** `key`: Authorization: Bearer RUN_KEY (default). `tma`: a valid Mini App initData of the owner. `public`: no check, the handler's own business (a second webhook, a health ping). */
-export interface Route<X = object> { method: string; path: string | RegExp; auth?: 'key' | 'tma' | 'public'; handler(req: Request, ctx: RouteCtx<X>): Promise<Response> }
+export interface RouteCtx<X = object> extends AppCtx<X> { url: URL; params: string[] /* regexp groups of the sub-path, if the route path is a RegExp */; /** set for `tma` and `tma_user` routes: the Telegram user whose initData was verified */ user?: { id: number } }
+/** `key`: Authorization: Bearer RUN_KEY (default). `tma`: a valid Mini App initData of the owner. `tma_user`: a valid Mini App initData of ANY Telegram user (a family member's app), the handler decides what that user may see via `ctx.user`. `public`: no check, the handler's own business (a second webhook, a health ping). */
+export interface Route<X = object> { method: string; path: string | RegExp; auth?: 'key' | 'tma' | 'tma_user' | 'public'; handler(req: Request, ctx: RouteCtx<X>): Promise<Response> }
 
 export interface CommandCtx<X = object> extends AppCtx<X> { args: string; replyToMessageId?: number; reply(text: string, markup?: Markup): Promise<void> }
 export interface Command<X = object> { name: string; description: string; run(c: CommandCtx<X>): Promise<void> }
@@ -37,6 +37,13 @@ export type PanelRow = { title: string; sub?: string; badge?: string; focus?: st
 export type PanelData = { rows: PanelRow[] } | { kv: [string, string][] } | { text: string };
 export interface Panel<X = object> { id: string; title: string; data(ctx: AppCtx<X>): Promise<PanelData> }
 
+/** An owner's private-chat message that no slash command took. `reply` quotes the message by default. */
+export interface MessageCtx<X = object> extends AppCtx<X> {
+  message: Message; text: string /* text or caption */; forwarded: boolean; replyToMessageId?: number;
+  reply(text: string, o?: { markup?: Markup; replyTo?: number | null; silent?: boolean }): Promise<number | undefined>;
+  react(emoji: string): Promise<void>;
+}
+
 export interface Extension<X = object> {
   name: string;                                   // [a-z][a-z0-9_]{1,15}
   migrations?: Migration[];                       // ids `<name>:...`; applied after the core ones, once each, in order
@@ -49,6 +56,10 @@ export interface Extension<X = object> {
   /** Updates from anyone but the owner (a family member, a group, a stranger) reach the core's gate first and are dropped. An extension that serves other people claims them here: return true when handled; false leaves them to be dropped. The core never answers non-owners itself. */
   outsiders?(ctx: AppCtx<X>, update: Update): Promise<boolean>;
   queue?: QueueHooks;                              // slots of its own, filters on the core slots, lease length and ceiling, a recovery step, longer expiry for some events
+  /** Runs first for every update (after the stop-button handler). Return true to drop it silently: business-connection updates, bot senders, an experiment fence. */
+  fence?(ctx: AppCtx<X>, update: Update): boolean | Promise<boolean>;
+  /** The owner's plain private message, before it becomes a session turn: claim intake, a rest/hold mode, a relayed answer, a keyboard-button text. Return true when handled (nothing is queued); false leaves it to the next extension and then the core. */
+  ownerMessage?(c: MessageCtx<X>): Promise<boolean>;
   eventColumns?: Record<string, string | number | null>;   // values for extra columns your migrations added to `events` that have no default (written on every core insert)
   help?: string;                                  // a line appended to /help
 }

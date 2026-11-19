@@ -6,6 +6,7 @@ Semantic versions. A core change is made here first; a private layer bumps its s
 
 - Mac side, from the private bot's scripts: `bot-say` gains `--roll --photo --doc --issue --keyboard --replace --topic/--thread` (ignored) and `BOT_SAY_LEGACY`/`PULT_SAY_LEGACY`; the wall is `PULT_DENY_FILE` plus plugin `wall()`; new hooks module (`pult.hooks`) and user-text overrides (`pult.i18n`, plugin `strings()`).
 - Queue hooks (`Extension.queue`): slots of an extension's own (`pull(db, '<name>')`, with a `gate`), filters on the core slots, lease length and a heartbeat ceiling per row, a recovery step that runs before dead leases are requeued, longer expiry for chosen events. Priority 3 (other people's events) belongs to the interactive slot after 0 and 1. `enqueue` takes per-call `extra` columns. Migration `core:0003_lease_columns` (`events.lease_started`, `events.leased_by`); migrations may carry `addColumns`, which skips a column the table already has.
+- Front hooks: `Extension.fence`, `Extension.ownerMessage` (with `MessageCtx`), route auth `tma_user`, `ctx.user` on `tma` routes; `createApp` options `strings`, `menu`, `replyKeyboard`, `hourlyCron`, `appAssets`; `RICH=0` plain-text switch in `grammyTg(api, rich)`. `docs/extending.md` lists them.
 
 ## 0.3.1 (2026-11-19)
 

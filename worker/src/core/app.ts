@@ -5,10 +5,10 @@ import { itemsRoute } from './api.ts';
 import { handleCallback } from './callbacks.ts';
 import { cmdNew, cmdSessions, cmdStop, filesOf, inbound, queueItemEvent, statusLine, stopDraft, switchTo } from './chat.ts';
 import type { Env } from './env.ts';
-import { type AppCtx, type Extension, type Route, validate } from './extension.ts';
+import { type AppCtx, type Extension, type MessageCtx, type Route, validate } from './extension.ts';
 import { hourly } from './hourly.ts';
 import { CORE_MIGRATIONS, migrate } from './migrations.ts';
-import { appRoute, authenticate, WRITE_KEY, writeEnabled } from './miniapp/api.ts';
+import { appRoute, authenticate, authenticateUser, WRITE_KEY, writeEnabled } from './miniapp/api.ts';
 import { appAsset } from './miniapp/assets.ts';
 import { replyEvent } from './replies.ts';
 import { callbackData, setButtonOptions } from './render.ts';
@@ -46,7 +46,17 @@ export async function sameKey(given: string, want: string): Promise<boolean> {
   return d === 0;
 }
 
-export interface AppOptions<X> { extensions?: Extension<X>[]; /** user-facing sentences in your language; keys you leave out stay English (core/strings.ts) */ strings?: Record<string, string> }
+type MenuEntry = { command: string; description: string };
+export interface AppOptions<X> {
+  extensions?: Extension<X>[];
+  /** The slash-command menu `/setup` registers. Gets the core's entries and the extensions' commands; default is both, in that order. Return what you want shown (a private layer hides /new, adds menu-only entries). */
+  menu?: (core: MenuEntry[], ext: MenuEntry[]) => MenuEntry[];
+  /** A persistent reply keyboard (rows of button texts) sent with /start, /help and /status. The taps arrive as plain messages: handle them in an extension's `ownerMessage`. */
+  replyKeyboard?: string[][];
+  /** The cron expression of the hourly sweep. When set, the core's sweep runs only on that trigger and extensions' `scheduled` still run on every one (check `ev.cron`). Default: sweep on every trigger. */
+  hourlyCron?: string;
+  /** Serves the Mini App page from your own assets: given the path (`/app/...`), return a Response or null to fall through to the core page. */
+  appAssets?: (path: string, env: Env & X) => Response | null | Promise<Response | null>; /** user-facing sentences in your language; keys you leave out stay English (core/strings.ts) */ strings?: Record<string, string> }
 export interface App<X> {
   fetch(req: Request, env: Env & X): Promise<Response>;
   scheduled(e: ScheduledController, env: Env & X, ctx: ExecutionContext): Promise<void>;
@@ -54,6 +64,7 @@ export interface App<X> {
 
 export function createApp<X extends object = object>(opts: AppOptions<X> = {}): App<X> {
   const exts = opts.extensions ?? [];
+  const kb = opts.replyKeyboard ? { reply_markup: { keyboard: opts.replyKeyboard.map(r => r.map(text => ({ text }))), resize_keyboard: true, is_persistent: true } } : undefined;
   validate(exts as Extension<never>[]);
   setStrings(opts.strings ?? {});
   setEventColumns(Object.assign({}, ...exts.map(e => e.eventColumns ?? {})));
@@ -66,19 +77,24 @@ export function createApp<X extends object = object>(opts: AppOptions<X> = {}): 
     return p;
   };
   const botOf = (env: Env) => new Bot(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_API_ROOT ? { client: { apiRoot: env.TELEGRAM_API_ROOT } } : {});
-  const ctxOf = (env: Env & X, api: Api, now = Date.now()): AppCtx<X> => ({ env, db: env.DB, tg: grammyTg(api), api, owner: Number(env.CHAT_ID), tz: ownerTz(env), now });
+  const ctxOf = (env: Env & X, api: Api, now = Date.now()): AppCtx<X> => ({ env, db: env.DB, tg: grammyTg(api, env.RICH !== '0'), api, owner: Number(env.CHAT_ID), tz: ownerTz(env), now });
   const commands = exts.flatMap(e => e.commands ?? []);
   const callbacks = exts.flatMap(e => e.callbacks ?? []);
   const actions = Object.assign({}, ...exts.map(e => e.queueActions ?? {})) as Record<string, NonNullable<Extension<X>['queueActions']>[string]>;
   const help = [HELP, ...exts.map(e => e.help).filter(Boolean), ...commands.map(c => `/${c.name}: ${c.description}`)].join('\n');
 
   function handlers(b: Bot, env: Env & X) {
-    const owner = Number(env.CHAT_ID), tz = ownerTz(env), tgOf = (api: Api) => grammyTg(api);
+    const owner = Number(env.CHAT_ID), tz = ownerTz(env), tgOf = (api: Api) => grammyTg(api, env.RICH !== '0');
     // The stop button on a streamed draft. Its update has no `from`; the chat is the owner's private chat or nothing happens.
     b.use(async (ctx, next) => {
       const g = (ctx.update as { stopped_message_generation?: { chat?: { id?: number }; draft_id?: number } }).stopped_message_generation;
       if (!g) return next();
       if (g.chat?.id === owner) await stopDraft(env, owner, g.draft_id, Date.now(), tz);
+    });
+    // An extension may fence updates off before anything else looks at them (business connections, bots, an experiment).
+    b.use(async (ctx, next) => {
+      for (const e of exts) if (e.fence && await Promise.resolve(e.fence(ctxOf(env, ctx.api), ctx.update)).catch(err => { console.error(`extension ${e.name}: fence failed`, err); return false; })) return;
+      await next();
     });
     // Only the owner reaches anything below: CHAT_ID is his private chat with the bot, and a private chat's id is its user's id.
     // Everyone else, groups, channels and other bots get no answer at all.
@@ -89,9 +105,9 @@ export function createApp<X extends object = object>(opts: AppOptions<X> = {}): 
       }
       await next();
     });
-    b.command('start', ctx => ctx.reply(S.start));
-    b.command(['help', 'commands'], ctx => ctx.reply(help));
-    b.command('status', async ctx => { await ctx.reply(await statusLine(env, Date.now(), tz)); });
+    b.command('start', ctx => ctx.reply(S.start, kb));
+    b.command(['help', 'commands'], ctx => ctx.reply(help, kb));
+    b.command('status', async ctx => { await ctx.reply(await statusLine(env, Date.now(), tz), kb); });
     b.command('new', async ctx => { await ctx.reply((await cmdNew(env, owner, String(ctx.match ?? ''), Date.now(), tz)).text); });
     b.command('sessions', async ctx => {
       const r = await cmdSessions(env, owner, Date.now(), tz);
@@ -146,6 +162,10 @@ export function createApp<X extends object = object>(opts: AppOptions<X> = {}): 
     b.on('message', async ctx => {
       const m = ctx.message, now = Date.now();
       if (ctx.chat.type !== 'private') return;
+      const msgCtx: MessageCtx<X> = { ...ctxOf(env, ctx.api, now), message: m, text: m.text ?? m.caption ?? '', forwarded: !!m.forward_origin, replyToMessageId: m.reply_to_message?.message_id,
+        reply: async (text, o) => (await ctx.reply(text, { ...(o?.markup ? { reply_markup: o.markup as never } : {}), ...(o?.silent ? { disable_notification: true } : {}), ...(o?.replyTo === null ? {} : { reply_parameters: { message_id: o?.replyTo ?? m.message_id, allow_sending_without_reply: true } }) }).catch(() => undefined))?.message_id,
+        react: async emoji => { await ctx.react(emoji as never).catch(() => undefined); } };
+      for (const e of exts) if (e.ownerMessage && await e.ownerMessage(msgCtx).catch(err => { console.error(`extension ${e.name}: ownerMessage failed`, err); return false; })) return;
       const { files, unsupported } = filesOf(m as never);
       const text = (m.forward_origin ? '[forwarded] ' : '') + (m.text ?? m.caption ?? '');
       if (!text && !files.length && !unsupported.length) return;
@@ -190,11 +210,14 @@ export function createApp<X extends object = object>(opts: AppOptions<X> = {}): 
     if (auth === 'key') {
       const key = /^Bearer (.+)$/.exec(req.headers.get('Authorization') ?? '')?.[1] ?? '';
       if (!(env.RUN_KEY && await sameKey(key, env.RUN_KEY))) return new Response('no', { status: 403 });
-    } else if (auth === 'tma') {
-      const who = await authenticate(req, ctx);
-      if (who instanceof Response) return who;
     }
-    return hit.r.handler(req, { ...ctx, url: u, params: hit.params });
+    let user: { id: number } | undefined;
+    if (auth === 'tma' || auth === 'tma_user') {
+      const who = auth === 'tma' ? await authenticate(req, ctx) : await authenticateUser(req, ctx);
+      if (who instanceof Response) return who;
+      user = { id: who.user.id };
+    }
+    return hit.r.handler(req, { ...ctx, url: u, params: hit.params, ...(user ? { user } : {}) });
   }
 
   return {
@@ -202,14 +225,15 @@ export function createApp<X extends object = object>(opts: AppOptions<X> = {}): 
       execCtx.waitUntil((async () => {
         await ensure(env);
         const api = botOf(env).api, ctx = ctxOf(env, api);
-        await hourly(env, ctx.tg, ctx.tz).catch(err => console.error('hourly sweep failed', err));
+        if (!opts.hourlyCron || ev.cron === opts.hourlyCron) await hourly(env, ctx.tg, ctx.tz).catch(err => console.error('hourly sweep failed', err));
         for (const e of exts) if (e.scheduled) await e.scheduled(ctx, ev).catch(err => console.error(`extension ${e.name}: scheduled failed`, err));
       })().catch(err => console.error('scheduled failed', err)));
     },
     async fetch(req, env) {
       const u = new URL(req.url);
       setButtonOptions(env);
-      const asset = req.method === 'GET' ? appAsset(u.pathname) : null;
+      const own = req.method === 'GET' && u.pathname.startsWith('/app') && opts.appAssets ? await opts.appAssets(u.pathname, env) : null;
+      const asset = own ?? (req.method === 'GET' ? appAsset(u.pathname) : null);
       if (asset) return asset;
       await ensure(env);
       if (u.pathname === '/tg' && req.method === 'POST') {
@@ -238,7 +262,8 @@ export function createApp<X extends object = object>(opts: AppOptions<X> = {}): 
         if (r) return r;
       }
       if (u.pathname === '/setup') {   // once after deploy: the command menu, the webhook (same secret the worker checks), the Mini App menu button
-        await api.setMyCommands([...COMMANDS, ...commands.map(c => ({ command: c.name, description: c.description.slice(0, 256) }))]);
+        const extMenu = commands.map(c => ({ command: c.name, description: c.description.slice(0, 256) }));
+        await api.setMyCommands(opts.menu ? opts.menu(COMMANDS, extMenu) : [...COMMANDS, ...extMenu]);
         await api.setWebhook(`${u.origin}/tg`, { secret_token: env.TG_SECRET, allowed_updates: ['message', 'callback_query', 'stopped_message_generation'] });
         await putSetting(env.DB, 'app:url', u.origin);
         await api.setChatMenuButton({ chat_id: Number(env.CHAT_ID), menu_button: { type: 'web_app', text: S.menuTitle, web_app: { url: `${u.origin}/app/` } } }).catch(() => undefined);

@@ -10,6 +10,7 @@ export interface Env {
   BOT_ID?: string;               // the bot's numeric id, for Ed25519 initData validation; default: the part of the token before ':'
   MINIAPP_AUTH?: 'hmac' | 'ed25519' | 'both';   // which initData checks the Mini App accepts, default both
   TG_PUBLIC_KEY?: string;        // hex Ed25519 key to verify initData signatures with, default Telegram's production key
+  RICH?: string;                 // '0': send the plain-text twin of every message instead of Telegram HTML
   BUTTON_STYLES?: string;        // '0': no coloured button styles
   BUTTON_DISABLED?: string;      // '0': no greyed-out button while a card's job runs
   PROGRESS_DRAFTS?: string;      // '0' turns streamed drafts off: /sessions/:id/draft answers fallback and the runner edits a message instead

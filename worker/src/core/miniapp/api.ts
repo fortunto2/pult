@@ -25,6 +25,15 @@ export async function authenticate<X>(req: Request, ctx: AppCtx<X>): Promise<Ini
   return r;
 }
 
+/** initData from the header, checked; ANY Telegram user (a member's app). The caller decides what that user may see. */
+export async function authenticateUser<X>(req: Request, ctx: AppCtx<X>): Promise<InitResult & { ok: true } | Response> {
+  const h = req.headers.get('Authorization') ?? '';
+  if (!h.startsWith('tma ')) return json({ error: 'unauthorized' }, 401);
+  const e = ctx.env;
+  const r = await validateInitData(h.slice(4), { botToken: e.TELEGRAM_BOT_TOKEN, botId: e.BOT_ID, publicKeyHex: e.TG_PUBLIC_KEY, mode: e.MINIAPP_AUTH }, ctx.now);
+  return r.ok ? r : json({ error: 'unauthorized', reason: r.reason }, 401);
+}
+
 export async function overview<X>(ctx: AppCtx<X>) {
   const { db, owner, now } = ctx;
   const cards = (await listItems(db, owner, { state: 'open' })).slice(0, 200).map(i => ({

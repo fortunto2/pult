@@ -1,7 +1,7 @@
 // The library surface of pult-worker: what a private layer imports. Everything else under src/core is internal and may change in a minor release.
 export { createApp, sameKey } from './core/app.ts';
 export type { App, AppOptions } from './core/app.ts';
-export type { AppCtx, Callback, CallbackCtx, Command, CommandCtx, Extension, Migration, Panel, PanelData, PanelRow, QueueAction, QEvent, Route, RouteCtx } from './core/extension.ts';
+export type { AppCtx, Callback, CallbackCtx, Command, CommandCtx, Extension, MessageCtx, Migration, Panel, PanelData, PanelRow, QueueAction, QEvent, Route, RouteCtx } from './core/extension.ts';
 export type { Env } from './core/env.ts';
 export type { Tg } from './core/tg.ts';
 export type { Button, Markup } from './core/render.ts';
