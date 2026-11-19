@@ -39,3 +39,4 @@ export { getProtected, setProtected, protectedToday } from './core/protected.ts'
 export { recentTaps } from './core/store.ts';
 export { grammyTg } from './core/tg.ts';
 export { itemsRoute } from './core/api.ts';
+export { InputFile } from 'grammy';   // the same grammY copy as the core's Api: an InputFile from another copy is refused at send time
