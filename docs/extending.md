@@ -37,6 +37,17 @@ cd worker && npm install && npx wrangler deploy --dry-run   # bundles the core t
 
 Upgrading is `git -C core fetch --tags && git -C core checkout v0.3.0`, the tests, then a commit of the submodule pointer.
 
+A core change is made inside the submodule checkout and goes to pult first, so your private repo never carries a patched copy of the core:
+
+```bash
+cd my-bot/core && git switch -c fix-x        # edit, make test, make integration
+git commit && git push                       # pult's history is public: the pre-commit scrub runs here too
+make release V=X.Y.Z                         # after CHANGELOG.md has the section; pushes the tag
+cd .. && git add core && git commit -m "core: bump to vX.Y.Z"
+```
+
+Run `make hooks` once in `core/`: it installs the pre-commit scrub (`scripts/check-public.sh`), which checks every commit against generic id, host and key shapes plus your own patterns in `${PULT_SCRUB_FILE:-~/.config/pult/scrub-patterns.txt}` (names, ids, hosts you never want in a public commit). Without that file it warns and runs only the generic rules.
+
 ## The worker side: `createApp({ extensions })`
 
 ```ts
