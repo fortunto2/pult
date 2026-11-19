@@ -2,6 +2,10 @@
 
 Semantic versions. A core change is made here first; a private layer bumps its submodule to the tag. The extension API (`worker/src/lib.ts`, `pult.actions`, `pult.plugins`) follows semver: a breaking change to a hook is a major version. Anything under `worker/src/core/` that `lib.ts` does not export is internal and may change in a minor release.
 
+## Unreleased
+
+- Mac side, from the private bot's scripts: `bot-say` gains `--roll --photo --doc --issue --keyboard --replace --topic/--thread` (ignored) and `BOT_SAY_LEGACY`/`PULT_SAY_LEGACY`; the wall is `PULT_DENY_FILE` plus plugin `wall()`; new hooks module (`pult.hooks`) and user-text overrides (`pult.i18n`, plugin `strings()`).
+
 ## 0.3.1 (2026-11-19)
 
 - `make hooks` works inside a submodule checkout (`.git` is a file there; the hook goes where `git rev-parse --git-path hooks` says).

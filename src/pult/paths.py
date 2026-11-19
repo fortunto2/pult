@@ -100,15 +100,30 @@ class DenyFileMissing(Exception):
     pass
 
 
-def deny_patterns() -> list[re.Pattern]:
-    """Optional wall. Unset: no patterns. Set but unreadable: refuse (fail closed)."""
+_DENY_CACHE: dict[tuple[str, int, int], list[re.Pattern]] = {}
+
+
+def _file_patterns() -> list[re.Pattern]:
     f = os.environ.get("PULT_DENY_FILE")
     if not f:
         return []
     p = Path(f).expanduser()
     if not p.exists():
         raise DenyFileMissing(f"PULT_DENY_FILE={f} does not exist; refusing to run without the wall")
-    return [re.compile(ln.strip(), re.I) for ln in p.read_text().splitlines() if ln.strip() and not ln.lstrip().startswith("#")]
+    st = p.stat()   # `bot-item seen` asks once per line: cached per (path, mtime, size), so an edit of the file is seen at once
+    key = (str(p), st.st_mtime_ns, st.st_size)
+    if key not in _DENY_CACHE:
+        _DENY_CACHE.clear()
+        _DENY_CACHE[key] = [re.compile(ln.strip(), re.I) for ln in p.read_text().splitlines() if ln.strip() and not ln.lstrip().startswith("#")]
+    return _DENY_CACHE[key]
+
+
+def deny_patterns() -> list[re.Pattern]:
+    """The wall: PULT_DENY_FILE (optional) plus every plugin's `wall()` (see pult.hooks). Unset: no patterns. Set but unreadable, or a plugin wall that
+    raises DenyFileMissing: refuse (fail closed)."""
+    from pult import hooks  # noqa: PLC0415  (hooks imports plugins imports paths)
+
+    return [*_file_patterns(), *(p for walls in hooks.collect("wall") for p in walls)]
 
 
 def denied(*texts: str | None, patterns: list[re.Pattern] | None = None) -> bool:
