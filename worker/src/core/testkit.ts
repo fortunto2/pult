@@ -48,3 +48,6 @@ export function fakeTg(): Tg & { calls: Call[]; failNext: (re: string) => void }
   };
 }
 export const noSleep = async () => undefined;
+
+/** For a private extension's tests: set the queue hooks and the extra event columns the way createApp does. */
+export { setQueueHooks, setEventColumns } from './queue.ts';
