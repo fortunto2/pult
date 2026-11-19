@@ -262,3 +262,15 @@ def test_plugin_hooks_gate_extend_and_add_subcommands(monkeypatch, tmp_path, cap
     assert sent[0][2]["source"] == "plugin" and "after x" in capsys.readouterr().out
     assert bi.main(["shout", "hey"]) == 0
     assert "ran hey" in capsys.readouterr().out
+
+
+def test_reopen_on_a_closed_card_is_refused_with_the_way_that_works(monkeypatch, capsys):
+    monkeypatch.setattr(bi, "request", lambda m, p, b=None: {"id": "gmail:x", "changed": False, "state": "done"})
+    assert bi.main(["reopen", "gmail:x"]) == 1
+    assert "put it again with changed content" in capsys.readouterr().err
+
+
+def test_reopen_after_a_failed_run_still_works(monkeypatch, capsys):
+    monkeypatch.setattr(bi, "request", lambda m, p, b=None: {"id": "c:1", "changed": True, "state": "new"})
+    assert bi.main(["reopen", "c:1"]) == 0
+    assert "c:1: new" in capsys.readouterr().out
