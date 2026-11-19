@@ -35,6 +35,7 @@ class ActionResult:
     item_result  done | reopen | None: what happens to the card the event came from. Honoured only when the action was registered with item_result=True
     loud         the last part of `say` rings the phone instead of arriving silently
     exit_code    the runner's process exit code for this event; None = 0 for done/stopped/requeue, 1 for failed
+    lost         set by ctx.run_claude when the lease was lost during the turn: a handler returns None (nothing posted, nothing acked) for such a result
     """
 
     status: str = "done"
@@ -42,6 +43,7 @@ class ActionResult:
     item_result: str | None = None
     loud: bool = False
     exit_code: int | None = None
+    lost: bool = False
 
     def __post_init__(self) -> None:
         if self.status not in STATUSES:

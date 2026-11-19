@@ -241,3 +241,15 @@ def test_a_plugin_names_extra_placeholders_and_agent_rules_can_come_from_a_file(
     assert paths.agent_rules_text() == "Own rules.\n"
     monkeypatch.delenv("PULT_AGENT_RULES")
     assert paths.agent_rules_text() == paths.data_text("agent-rules.txt")
+
+
+def test_a_lost_lease_inside_run_claude_is_a_result_flagged_lost_and_the_core_stays_silent(env, monkeypatch):
+    w, run, _ = env
+    reg = Registry()
+    reg.register("ask2", lambda ev, ctx: ctx.run_claude("x"), workflow="chat")
+    sr.LEASE["lost"] = True
+    try:
+        ev = {"id": 7, "user_id": 111, "role": "owner", "session_id": "s1", "action": "ask2", "priority": 0, "lease_id": "L7"}
+        assert sr.main_event(sr.Cfg(), ev, reg) == 4 and w.acks() == [] and w.says() == []
+    finally:
+        sr.LEASE["lost"] = False

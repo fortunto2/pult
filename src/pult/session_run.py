@@ -621,7 +621,7 @@ def main_event(cfg: Cfg, ev: dict, registry: Registry | None = None) -> int:
               fetch_files=lambda: fetch_files(cfg, ev, cfg.sessions_dir / sess["id"] / "inbox"), transcribe=lambda path: transcribe(cfg, wf, path),
               card=lambda: item_card(ev.get("item_id") or ""))
     res = action.handler(ev, ctx)
-    if res is None:   # the lease is gone: another runner owns the event, so no answer and no ack from here
+    if res is None or res.lost:   # the lease is gone: another runner owns the event, so no answer and no ack from here
         return 4
     reply = ev.get("reply_to")
     parts = split(res.say) if res.say else []
@@ -636,7 +636,7 @@ def _plugin_claude(ctx: Ctx, prompt: str) -> ActionResult:
     """ctx.run_claude for an extension's handler: one fresh turn in the event's workflow, its answer as an ActionResult (never a chat resume)."""
     prog = Progress(ctx.cfg, ctx.ev)
     out = claude_turn(ctx, prompt, resume=None, store_id=False, prog=prog)
-    return out if out is not None else ActionResult(status="failed", say=tr("run.lease_lost"))
+    return out if out is not None else ActionResult(status="failed", say=tr("run.lease_lost"), lost=True)
 
 
 def main() -> int:
