@@ -26,11 +26,13 @@ GENERIC=(
   '-----BEGIN [A-Z ]*PRIVATE KEY-----'
   '/Users/[A-Za-z0-9._-]+/'
   '/home/[A-Za-z0-9._-]+/'
-  '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
+  '[A-Za-z0-9][A-Za-z0-9._%+-]*@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
 )
+# History lines carry no path to match scrub-allow.txt against, so its fixtures are listed here as content patterns (epoch seconds in tests, all-zero and sequential short ids).
+HISTORY_FINE='1[0-9]{9}[,}) ]|0{10}|0123456789|^(\+\+\+|---) '
 ALLOW_EMAIL='(noreply|no-reply)@|@example\.(com|org)|@users\.noreply\.github\.com'
 
-files() { git ls-files -co --exclude-standard | grep -vE '^scripts/scrub-allow\.txt$|(^|/)(node_modules|\.venv|_work)/|(^|/)(package-lock\.json|uv\.lock)$|\.(png|jpg|ico|woff2?)$'; }
+files() { git ls-files -co --exclude-standard | grep -vE '^scripts/(scrub-allow\.txt|check-public\.sh)$|(^|/)(node_modules|\.venv|_work)/|(^|/)(package-lock\.json|uv\.lock)$|\.(png|jpg|ico|woff2?)$'; }
 allowed() {  # $1 path, $2 matching line
   [ -f scripts/scrub-allow.txt ] || return 1
   local p c
@@ -73,7 +75,7 @@ fi
 
 if [ "$HISTORY" = 1 ]; then
   for re in "${GENERIC[@]}"; do
-    hist="$(git log --all -p --format='commit %h %an <%ae>%n%B' 2>/dev/null | grep -E -- "$re" | grep -vE "$ALLOW_EMAIL" | grep -vE '^(\+\+\+|---) ' | head -3 | cut -c1-200)"
+    hist="$(git log --all -p --format='commit %h %an <%ae>%n%B' -- . ':!uv.lock' ':!worker/package-lock.json' ':!scripts/check-public.sh' ':!scripts/scrub-allow.txt' 2>/dev/null | sed 's/^[+ -]//' | grep -E -- "$re" | grep -vE "$ALLOW_EMAIL" | grep -vE "$HISTORY_FINE" | head -3 | cut -c1-200)"
     [ -n "$hist" ] && { printf 'generic (history, %s): %s\n' "$re" "$hist"; bad=1; }
   done
 fi
