@@ -16,3 +16,17 @@ export { mdToTg } from './core/mdtg.ts';
 export { resolveSession } from './core/sessions.ts';
 export { validateInitData } from './core/miniapp/initdata.ts';
 export { S, setStrings, resetStrings, t } from './core/strings.ts';
+
+// Card layer, settings and drafts: what a private layer's extensions import (added with the first private extensions that needed them).
+export { ACTIONS, addActions } from './core/contract.ts';
+export type { ActionDef, Item, Kind, Urgency, State, Role, CustomAction } from './core/contract.ts';
+export { applyUnwork, applyWork, itemLog, setUrgency } from './core/store.ts';
+export { metaOf } from './core/roll.ts';
+export { groupOf } from './core/render.ts';
+export { streamOf } from './core/streams.ts';
+export { configureCards, cards } from './core/cardconfig.ts';
+export type { CardConfig } from './core/cardconfig.ts';
+export { finishSend, claimSend, getSend, listSends, sendsToday, draftOf, replyOf, DEFAULT_SENDS_PER_DAY } from './core/drafts.ts';
+export type { ItemEvent } from './core/replies.ts';
+export { pausedUntil, withSettings, setFlag, flagOn } from './core/settings.ts';
+export { authenticate, authenticateUser } from './core/miniapp/api.ts';
