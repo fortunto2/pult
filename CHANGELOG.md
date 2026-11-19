@@ -2,7 +2,8 @@
 
 Semantic versions. A core change is made here first; a private layer bumps its submodule to the tag. The extension API (`worker/src/lib.ts`, `pult.actions`, `pult.plugins`) follows semver: a breaking change to a hook is a major version. Anything under `worker/src/core/` that `lib.ts` does not export is internal and may change in a minor release.
 
-## Unreleased
+## 0.5.1 (2026-11-19)
+
 
 - `lib.ts` exports grammY's `InputFile`: a private layer that sends files through `ctx.api` must use the core's copy (a second grammY install makes `InputFile instances must be sent via grammY`).
 
