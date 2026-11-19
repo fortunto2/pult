@@ -2,6 +2,10 @@
 
 Semantic versions. A core change is made here first; a private layer bumps its submodule to the tag. The extension API (`worker/src/lib.ts`, `pult.actions`, `pult.plugins`) follows semver: a breaking change to a hook is a major version. Anything under `worker/src/core/` that `lib.ts` does not export is internal and may change in a minor release.
 
+## 0.4.1 (2026-11-19)
+
+- `createApp({ pathAliases })`: a private bot's old URLs (`/owner/...`, `/readmodel`) keep working after their handlers moved under `/x/<name>/`; the longest alias wins. Scripts and devices that call the old paths change nothing.
+
 ## 0.4.0 (2026-11-19)
 
 The core grows to a superset of the private bot's card, queue and front layers, so a private layer is extensions only.

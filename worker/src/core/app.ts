@@ -58,6 +58,8 @@ export interface AppOptions<X> {
   /** The cron expression of the hourly sweep. When set, the core's sweep runs only on that trigger and extensions' `scheduled` still run on every one (check `ev.cron`). Default: sweep on every trigger. */
   hourlyCron?: string;
   /** Serves the Mini App page from your own assets: given the path (`/app/...`), return a Response or null to fall through to the core page. */
+  /** Keeps a private bot's old URLs alive: a request path starting with a key is routed as if it started with the value (e.g. `{ '/owner/': '/x/family/owner/' }`), so scripts and devices that already call the old paths need no change. Longest key wins. */
+  pathAliases?: Record<string, string>;
   appAssets?: (path: string, env: Env & X) => Response | null | Promise<Response | null>; /** user-facing sentences in your language; keys you leave out stay English (core/strings.ts) */ strings?: Record<string, string> }
 export interface App<X> {
   fetch(req: Request, env: Env & X): Promise<Response>;
@@ -225,6 +227,8 @@ export function createApp<X extends object = object>(opts: AppOptions<X> = {}): 
     },
     async fetch(req, env) {
       const u = new URL(req.url);
+      const alias = Object.keys(opts.pathAliases ?? {}).filter(k => u.pathname.startsWith(k)).sort((a, b) => b.length - a.length)[0];
+      if (alias) u.pathname = opts.pathAliases![alias] + u.pathname.slice(alias.length);
       setButtonOptions(env);
       const own = req.method === 'GET' && u.pathname.startsWith('/app') && opts.appAssets ? await opts.appAssets(u.pathname, env) : null;
       const asset = own ?? (req.method === 'GET' ? appAsset(u.pathname) : null);
