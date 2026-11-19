@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- The runner under launchd. Copy to ~/Library/LaunchAgents/com.example.pult-run.plist, replace /path/to/pult, then:
+       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.example.pult-run.plist
+     KeepAlive restarts it; it holds a lock, so a second copy exits at once. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.example.pult-run</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>/path/to/pult/bin/pult-run</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- launchd has a bare PATH: it must find `claude` and your transcriber -->
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>/tmp/pult-run.out.log</string>
+  <key>StandardErrorPath</key><string>/tmp/pult-run.err.log</string>
+</dict>
+</plist>
