@@ -1,0 +1,12 @@
+.venv/
+_work/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+node_modules/
+.wrangler/
+worker/wrangler.toml
+.dev.vars
+.env*
+*.pem
+*.key
