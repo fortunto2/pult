@@ -95,8 +95,9 @@ You need: a Cloudflare account (the free plan is enough), Node 22+, `uv`, Python
    python3 bin/pult-run --once          # a first pull; Ctrl-C if it idles
    ```
    For good, run `bin/pult-run` under launchd: see `examples/pult-run.plist`. Optional: a second key (`RUNNER_KEY` on the worker, `~/.config/pult/runner_key` here) that opens only the queue routes, so the runner can live on a machine that never holds the owner key.
-4. **Try it.** Message the bot. A 👀 reaction means it is queued; the answer arrives as a reply. `/status` shows the queue.
-5. **Cards.** `python3 bin/bot-item card --id test:1 --title "Check the build" --do "Check the build" --why "release is Friday"` puts a card in the chat. See `examples/job-example.sh`.
+4. **Mini App (optional).** The worker serves it at `https://<your-worker>.workers.dev/app/`, and `/setup` already set the chat menu button and `/app`. To get a Launch button on the bot's profile and a `t.me/<bot>/<app>` link, open @BotFather, choose your bot, `Bot Settings`, `Configure Mini App` (or `/newapp`), and give the URL above; the `startapp` links in this README use that short name. It stays read-only until you send `/appwrite on`.
+5. **Try it.** Message the bot. A 👀 reaction means it is queued; the answer arrives as a reply. `/status` shows the queue.
+6. **Cards.** `python3 bin/bot-item card --id test:1 --title "Check the build" --do "Check the build" --why "release is Friday"` puts a card in the chat. See `examples/job-example.sh`.
 
 ### The live channel
 

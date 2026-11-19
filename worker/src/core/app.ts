@@ -17,7 +17,7 @@ import { isQueuePath, sessionsRoute } from './sessions-api.ts';
 import { listItems } from './store.ts';
 import { grammyTg } from './tg.ts';
 import { ownerTz } from './tz.ts';
-import type { QEvent } from './queue.ts';
+import { setEventColumns, type QEvent } from './queue.ts';
 
 const COMMANDS = [
   { command: 'new', description: 'new Claude session (until midnight)' },
@@ -54,6 +54,7 @@ export interface App<X> {
 export function createApp<X extends object = object>(opts: AppOptions<X> = {}): App<X> {
   const exts = opts.extensions ?? [];
   validate(exts as Extension<never>[]);
+  setEventColumns(Object.assign({}, ...exts.map(e => e.eventColumns ?? {})));
   const migrations = [...CORE_MIGRATIONS, ...exts.flatMap(e => e.migrations ?? [])];
   const ready = new WeakMap<D1Database, Promise<string[]>>();   // once per isolate and database; a failed run is retried by the next request
   const ensure = (env: Env) => {
@@ -79,7 +80,10 @@ export function createApp<X extends object = object>(opts: AppOptions<X> = {}): 
     // Only the owner reaches anything below: CHAT_ID is his private chat with the bot, and a private chat's id is its user's id.
     // Everyone else, groups, channels and other bots get no answer at all.
     b.use(async (ctx, next) => {
-      if (!ctx.from || ctx.from.is_bot || ctx.from.id !== owner || ctx.chat?.id !== owner) return;
+      if (!ctx.from || ctx.from.is_bot || ctx.from.id !== owner || ctx.chat?.id !== owner) {
+        for (const e of exts) if (e.outsiders && await e.outsiders(ctxOf(env, ctx.api), ctx.update).catch(err => { console.error(`extension ${e.name}: outsiders failed`, err); return false; })) return;
+        return;
+      }
       await next();
     });
     b.command('start', ctx => ctx.reply('Write a message and Claude answers. /help lists the commands.'));

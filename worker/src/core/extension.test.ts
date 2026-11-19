@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import { createApp } from './app.ts';
 import { CORE_MIGRATIONS, migrate } from './migrations.ts';
 import { makeDb } from './testkit.ts';
@@ -37,4 +37,34 @@ test('schema.gen.ts is the generated twin of schema.sql', async () => {
   const { spawnSync } = await import('node:child_process');
   const r = spawnSync(process.execPath, [new URL('../../scripts/gen-schema.mjs', import.meta.url).pathname, '--check']);
   assert.equal(r.status, 0, String(r.stderr));
+});
+
+test('eventColumns: an extension whose table has a NOT NULL column without a default can still receive core inserts (the live-database case)', async () => {
+  const { enqueue, setEventColumns } = await import('./queue.ts');
+  const db = makeDb();
+  await db.exec('DROP TABLE events; CREATE TABLE events (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, item_id TEXT NOT NULL, action TEXT NOT NULL, created_at INTEGER NOT NULL, priority INTEGER NOT NULL DEFAULT 0, session_id TEXT, text TEXT, files TEXT, reply_to INTEGER, status TEXT NOT NULL DEFAULT \'queued\', attempts INTEGER NOT NULL DEFAULT 0, stop_requested INTEGER NOT NULL DEFAULT 0, leased_until INTEGER, lease_id TEXT, acked_at INTEGER, role TEXT NOT NULL)');
+  const ev = { user_id: 1, session_id: null, text: 'x', priority: 0 };
+  setEventColumns({});
+  await assert.rejects(enqueue(db, ev, 1), /NOT NULL/);
+  assert.throws(() => createApp({ extensions: [{ name: 'x1', eventColumns: { status: 'x' } }] }), /plain extra column/);
+  createApp({ extensions: [{ name: 'x1', eventColumns: { role: 'owner' } }] });
+  await enqueue(db, ev, 1);
+  assert.equal((await db.prepare('SELECT role FROM events').first<{ role: string }>())?.role, 'owner');
+  setEventColumns({});
+});
+
+const stub = await (await import('./tgstub.ts')).telegramStub();
+after(() => stub.close());
+test('outsiders: an extension may claim a non-owner update; unclaimed ones are still dropped without a word', async () => {
+  const seen: number[] = [];
+  const app = createApp({ extensions: [{ name: 'fam', outsiders: async (_c, u) => { seen.push(u.message?.from?.id ?? 0); return u.message?.text === 'mine'; } }] });
+  const db = makeDb();
+  const env = { CHAT_ID: '42', TELEGRAM_BOT_TOKEN: '1:t', TG_SECRET: 's', RUN_KEY: 'k', DB: db, TELEGRAM_API_ROOT: stub.root };
+  const send = (from: number, text: string) => app.fetch(new Request('https://w.test/tg', { method: 'POST', headers: { 'content-type': 'application/json', 'X-Telegram-Bot-Api-Secret-Token': 's' },
+    body: JSON.stringify({ update_id: 1, message: { message_id: 1, date: 1, chat: { id: from, type: 'private' }, from: { id: from, is_bot: false, first_name: 'x' }, text } }) }), env);
+  assert.equal((await send(43, 'hello')).status, 200);
+  assert.equal((await send(43, 'mine')).status, 200);
+  assert.equal((await send(42, 'owner text')).status, 200);
+  assert.deepEqual(seen, [43, 43], 'only non-owners are offered, the owner never is');
+  assert.equal((await db.prepare('SELECT COUNT(*) n FROM events').first<{ n: number }>())?.n, 1, 'only the owner\'s message became an event');
 });

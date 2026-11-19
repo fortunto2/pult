@@ -11,6 +11,7 @@ The core becomes a library.
 - Mini App, served by the worker at `/app/`: initData checked by HMAC or by Ed25519 signature (no token needed, `bot_id` plus Telegram's key), one-hour window, owner only. A generic read-only view (open cards, sessions, queue depth and the usage-limit pause, recent runs), declarative panels from extensions, `startapp` deep links (`card_<short>`, `session_<id>`, `panel_<id>`), fullscreen and add-to-home-screen buttons. Write-back is a D1 switch, off by default (`/appwrite on|off`). `/app` command and the chat menu button.
 - Telegram: streamed progress through `sendMessageDraft` with the stop button, `stopped_message_generation` handled like `/stop`, coloured and greyed-out buttons. All three fall back or switch off by flag. **Untested against a real client.**
 - Python: the Mac side is the `pult` package with console scripts (`pult-run`, `session-run`, `bot-item`, `bot-say`, `tg-channel`, `live-session`), an action registry, `PULT_PLUGINS` plugin loading, every path from the environment, packaged default workflows with an override.
+- `Extension.outsiders` (a private layer claims non-owner updates, the family seam) and `Extension.eventColumns` (extra NOT NULL columns on `events`, the live-database seam). `docs/migration.md`: moving a private bot onto the core as a submodule.
 - `make check-public` and a pre-commit hook: generic id, host and key patterns plus your own list from a file outside the repo.
 
 ## 0.1.0

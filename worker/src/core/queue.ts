@@ -22,9 +22,14 @@ export const clearLiveSeen = (db: D1Database, sessionId: string) => db.prepare('
 
 const row = (r: Record<string, unknown>): QEvent => ({ ...(r as unknown as QEvent), role: 'owner', files: r.files ? JSON.parse(String(r.files)) : [] });
 
+/** Extra columns an extension's schema put on `events` (say a NOT NULL `role` with no default): written on every insert. Set once by createApp from the extensions' `eventColumns`. */
+let extraColumns: Record<string, string | number | null> = {};
+export const setEventColumns = (c: Record<string, string | number | null>) => { extraColumns = { ...c }; };
+
 export async function enqueue(db: D1Database, e: { user_id: number; session_id: string | null; text: string; files?: QEvent['files']; priority: number; reply_to?: number | null; item_id?: string; action?: string }, now: number): Promise<number> {
-  const r = await db.prepare('INSERT INTO events (user_id, item_id, action, created_at, priority, session_id, text, files, reply_to) VALUES (?,?,?,?,?,?,?,?,?)')
-    .bind(e.user_id, e.item_id ?? '', e.action ?? 'ask', now, e.priority, e.session_id, e.text, e.files?.length ? JSON.stringify(e.files) : null, e.reply_to ?? null).run();
+  const cols = ['user_id', 'item_id', 'action', 'created_at', 'priority', 'session_id', 'text', 'files', 'reply_to', ...Object.keys(extraColumns)];
+  const vals = [e.user_id, e.item_id ?? '', e.action ?? 'ask', now, e.priority, e.session_id, e.text, e.files?.length ? JSON.stringify(e.files) : null, e.reply_to ?? null, ...Object.values(extraColumns)];
+  const r = await db.prepare(`INSERT INTO events (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(',')})`).bind(...vals).run();
   return Number((r.meta as { last_row_id?: number }).last_row_id);
 }
 
