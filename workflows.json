@@ -1,0 +1,47 @@
+{
+  "_doc": "Workflows for bin/session-run. A session names one (default chat). Edits are picked up on the next turn. Placeholders: {PULT} = this checkout, {WORK} = its state dir, {HOME}. permission_mode: 'acceptEdits' keeps chat safe by default (edits ok, other tools denied headless); switch to 'bypassPermissions' only if you accept an agent that can run anything on this Mac from your phone.",
+  "workflows": {
+    "chat": {
+      "cwd": "~",
+      "permission_mode": "acceptEdits",
+      "allowed_tools": null,
+      "timeout_s": 1500
+    },
+    "draft": {
+      "_doc": "EVERY event that carries an item_id (card button, «More», reply to a card) runs here, never in `chat`: read and draft only, enforced by the tool rules, not by the prompt. dontAsk denies whatever is not allowed. A fresh Claude session every time (never resumes the chat session, so quoted inbox text cannot ride into a more permissive session). The deny list is checked first. Add your own read-only commands to allowed_tools (a mail search, a notes lookup); never add a command that sends.",
+      "cwd": "{WORK}",
+      "add_dirs": ["{WORK}"],
+      "permission_mode": "dontAsk",
+      "allowed_tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Bash(python3 {PULT}/bin/bot-item get:*)",
+        "Bash(python3 {PULT}/bin/bot-item log:*)",
+        "Bash(python3 {PULT}/bin/bot-item list:*)",
+        "Bash({PULT}/bin/bot-item get:*)",
+        "Bash({PULT}/bin/bot-item log:*)",
+        "Edit(/{WORK}/drafts/**)"
+      ],
+      "disallowed_tools": [
+        "WebFetch",
+        "WebSearch",
+        "Task",
+        "NotebookEdit",
+        "Read(**/secrets.json)",
+        "Read(**/.env*)",
+        "Read(~/.config/**)",
+        "Read(~/.ssh/**)",
+        "Read(**/*.pem)",
+        "Read(**/*token*)"
+      ],
+      "resume": false,
+      "timeout_s": 600
+    }
+  },
+  "_doc_transcribers": "Voice notes are turned into text before the model sees them. argv with {audio} and {outdir}; the tool must write <outdir>/<audio stem>.txt. mlx_whisper (Apple silicon, `uv tool install mlx-whisper`) is the example; use any CLI that does the same.",
+  "transcribers": {
+    "mlx": ["mlx_whisper", "{audio}", "--output-dir", "{outdir}", "--output-format", "txt", "--model", "mlx-community/whisper-large-v3-turbo"]
+  },
+  "transcriber": "mlx"
+}

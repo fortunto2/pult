@@ -1,0 +1,214 @@
+#!/usr/bin/env python3
+"""Put an item into the bot's store (D1 behind your worker). Jobs write items, never chat text.
+
+    bot-item decision --id gmail:x --title "Reply to the invoice" [--body TEXT|-] [--actions done,snooze,drop]
+                      [--urgency now|today|week] [--source sweep] [--action "label=instruction"]...
+                      a decision card; up to 3 custom buttons (label <=24, instruction <=300): a press hands
+                      the instruction to the agent as a read-and-draft job (it can read and write drafts, never send)
+    bot-item card --id ID --title T [--body TEXT|-] [--link https://..] [--source-label S] [--copy TEXT]
+                      a decision card with a link button, a source line and an automatic «More» button
+    bot-item put --kind inbox|digest|incident|meeting --id ID --title T [--body TEXT|-] [--fix CMD] [--start EPOCH_S]
+                 [--expires-in-min N] [--loud]       a living note, an incident with a fix command, a meeting
+    bot-item list [--state open|new|shown|snoozed|done|dropped|expired] [--kind decision] [--json]
+    bot-item get ID                     one item as JSON
+    bot-item log ID                     every press, comment and detail of an item
+    bot-item detail ID                  stdin -> the expanded section of a card (what a «More» job writes)
+    bot-item reopen ID                  put an item back on the list
+    bot-item close ID [--drop|--expire] mark an item done (or dropped; --expire: no trace left in the chat)
+    bot-item resolve PREFIX             expire every OPEN incident (or finished meeting) whose id starts with PREFIX; prints how many
+
+A card may carry --do, --why, --cost (what to do, why, what it costs) and --verb (the primary button's word); the worker shows them.
+Items are SILENT unless --loud. The same id with the same content creates nothing new; a closed item stays closed;
+changed content reopens it. `snooze` in --actions means the three snooze buttons (1 h, tomorrow, 3 days).
+Optional PULT_DENY_FILE: an item that matches one of its regexes is not written.
+"""
+import argparse
+import json
+import sys
+import time
+import urllib.error
+import urllib.parse
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import pult_config as cfg  # noqa: E402
+
+ALIASES = {"snooze": ["snooze_1h", "snooze_tomorrow", "snooze_3d"]}
+DEFAULT_ACTIONS = "done,snooze,drop"
+DETAILS_LABEL = "More"
+DETAILS_INSTRUCTION = ("Gather the details for this card: what is in the message or thread, what is already known about the sender, "
+                       "what the card is waiting for. Read only. Answer in 3-8 short lines with no preamble and no ITEM-DONE: the text goes inside the card.")
+
+
+def expand_actions(spec: str) -> list[str]:
+    out: list[str] = []
+    for name in (s.strip() for s in spec.split(",") if s.strip()):
+        for a in ALIASES.get(name, [name]):
+            if a not in out:
+                out.append(a)
+    return out
+
+
+def parse_custom(specs: list[str] | None) -> list[dict]:
+    """`label=instruction` -> {label, instruction}; the worker enforces 3 / 24 / 300, this fails early with the same words."""
+    out = []
+    for spec in specs or []:
+        label, sep, instruction = spec.partition("=")
+        label, instruction = label.strip(), instruction.strip()
+        if not sep or not label or not instruction:
+            sys.exit(f"bot-item: --action wants 'label=instruction', got {spec!r}")
+        if len(label) > 24 or len(instruction) > 300:
+            sys.exit(f"bot-item: --action label <=24 and instruction <=300 chars ({label!r})")
+        out.append({"label": label, "instruction": instruction})
+    if len(out) > 3:
+        sys.exit("bot-item: at most 3 --action buttons")
+    return out
+
+
+def decision_body(item_id: str, title: str, body: str = "", actions: str = DEFAULT_ACTIONS, urgency: str = "today",
+                  source: str | None = None, loud: bool = False, custom: list[str] | None = None, link: str | None = None,
+                  source_label: str | None = None, copy: str | None = None, details: bool = False,
+                  meta: dict | None = None) -> dict:
+    """card = a decision with a link button, a source line and an automatic «More» button."""
+    if link and not link.startswith("https://"):
+        sys.exit(f"bot-item: --link must be https://, got {link!r}")
+    specs = list(custom or [])
+    if details and len(specs) < 3:
+        specs.insert(0, f"{DETAILS_LABEL}={DETAILS_INSTRUCTION}")
+    payload = {k: v for k, v in {"link": link, "source_label": source_label, "copy": copy, "card": True if details else None,
+                                 "meta": {k: v for k, v in (meta or {}).items() if v} or None}.items() if v}
+    d = {"id": item_id, "kind": "decision", "title": title, "body": body, "actions": expand_actions(actions),
+         "urgency": urgency, "source": source, "loud": True if loud else None,
+         "custom_actions": parse_custom(specs) or None, "payload": payload or None}
+    return {k: v for k, v in d.items() if v is not None}
+
+
+def put_body(kind: str, item_id: str, title: str, body: str = "", fix: str | None = None, start: int | None = None,
+             expires_in_min: int | None = None, loud: bool = False, now_ms: int | None = None) -> dict:
+    """A stream item. Actions are left to the worker's per-kind default (incident: ack)."""
+    payload = {k: v for k, v in {"fix": fix, "start": start}.items() if v is not None}
+    expires = (now_ms if now_ms is not None else int(time.time() * 1000)) + expires_in_min * 60_000 if expires_in_min else None
+    d = {"id": item_id, "kind": kind, "title": title, "body": body, "payload": payload or None, "expires_at": expires,
+         "loud": True if loud else None}
+    return {k: v for k, v in d.items() if v is not None}
+
+
+def request(method: str, path: str, body: dict | None = None) -> dict | list:
+    try:
+        return cfg.owner_request(method, path, body)
+    except urllib.error.HTTPError as e:
+        sys.exit(f"bot-item: {e.code} {e.read().decode()[:300]}")
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    d = sub.add_parser("decision")
+    d.add_argument("--id", required=True)
+    d.add_argument("--title", required=True)
+    d.add_argument("--body", default="", help="text, or - to read stdin")
+    d.add_argument("--actions", default=DEFAULT_ACTIONS)
+    d.add_argument("--urgency", choices=["now", "today", "week"], default="today")
+    d.add_argument("--source")
+    d.add_argument("--loud", action="store_true", help="may ring; default silent")
+    d.add_argument("--action", action="append", metavar="LABEL=INSTRUCTION", help="custom button, up to 3")
+    cd = sub.add_parser("card", help="an inbox item as its own card: More, Done/Drop, snoozes, Open")
+    cd.add_argument("--id", required=True)
+    cd.add_argument("--title", required=True)
+    cd.add_argument("--body", default="", help="1-3 lines, or - for stdin")
+    cd.add_argument("--link", help="https URL for the «Open» button (a verified one only)")
+    cd.add_argument("--source-label", help="shown in italics under the card")
+    cd.add_argument("--copy", help="text for a «Copy» button (a draft, a command, an address), up to 256 chars")
+    cd.add_argument("--urgency", choices=["now", "today", "week"], default="today")
+    cd.add_argument("--loud", action="store_true")
+    cd.add_argument("--action", action="append", metavar="LABEL=INSTRUCTION")
+    for sp in (d, cd):
+        sp.add_argument("--do", help="the action to take, one line")
+        sp.add_argument("--why", help="why it exists: what is lost if it is not done")
+        sp.add_argument("--cost", help="what it costs, e.g. '5 min'")
+        sp.add_argument("--verb", help="the primary button's own word; default «Done»")
+    pu = sub.add_parser("put")
+    pu.add_argument("--kind", required=True, choices=["inbox", "digest", "incident", "meeting"])
+    pu.add_argument("--id", required=True)
+    pu.add_argument("--title", required=True)
+    pu.add_argument("--body", default="", help="text, or - to read stdin")
+    pu.add_argument("--fix", help="incident: the command to copy")
+    pu.add_argument("--start", type=int, help="meeting: start, epoch seconds")
+    pu.add_argument("--expires-in-min", type=int, help="meeting: deleted this many minutes from now")
+    pu.add_argument("--loud", action="store_true")
+    dt = sub.add_parser("detail", help="fill the expanded section of a card from stdin (a «More» job)")
+    dt.add_argument("id")
+    lg = sub.add_parser("log", help="every press, comment and detail of an item")
+    lg.add_argument("id")
+    gt = sub.add_parser("get", help="one item as JSON")
+    gt.add_argument("id")
+    ls = sub.add_parser("list")
+    ls.add_argument("--state")
+    ls.add_argument("--kind")
+    ls.add_argument("--json", action="store_true")
+    c = sub.add_parser("close")
+    c.add_argument("id")
+    c.add_argument("--drop", action="store_true")
+    c.add_argument("--expire", action="store_true", help="state expired, message removed")
+    rs = sub.add_parser("resolve", help="expire open incidents by id prefix: the check or job they reported is green again")
+    rs.add_argument("prefix")
+    ro = sub.add_parser("reopen")
+    ro.add_argument("id")
+    a = ap.parse_args(argv)
+    q = urllib.parse.quote
+
+    if a.cmd == "resolve":
+        if not a.prefix.startswith(("incident:", "meeting:")):
+            sys.exit("bot-item resolve: the prefix must start with 'incident:' or 'meeting:' (job-owned streams only, never a card of the owner)")
+        kind, n = a.prefix.split(":", 1)[0], 0
+        for i in request("GET", f"/items?kind={kind}"):  # type: ignore[union-attr]
+            over = kind == "incident" or (i.get("expires_at") or 0) <= time.time() * 1000   # a meeting only once its end has passed
+            if i["id"].startswith(a.prefix) and i["state"] in ("new", "shown") and over:
+                n += bool(request("POST", f"/items/{q(i['id'], safe='')}/state", {"state": "expired"})["changed"])  # type: ignore[call-overload,index]
+        print(n)
+        return 0
+    if a.cmd == "detail":
+        r = request("POST", f"/items/{q(a.id, safe='')}/detail", {"text": sys.stdin.read().strip()})
+        print(f"{r['id']}: detail {'set' if r['changed'] else 'unchanged'}")  # type: ignore[call-overload]
+        return 0
+    if a.cmd == "log":
+        r = request("GET", f"/items/{q(a.id, safe='')}/log")
+        for row in r["log"]:  # type: ignore[call-overload]
+            print(f"{row['at']} {row['by']:12} {row['from_state']}->{row['to_state']}  {row['note']}")
+        return 0
+    if a.cmd == "get":
+        print(json.dumps(request("GET", f"/items/{q(a.id, safe='')}"), ensure_ascii=False, indent=2))
+        return 0
+    if a.cmd in ("decision", "card", "put"):
+        body = sys.stdin.read().strip() if a.body == "-" else a.body
+        try:
+            if cfg.denied(a.title, body, getattr(a, "source_label", None), getattr(a, "link", None)):
+                print(f"{a.id}: filtered (deny file), nothing written")
+                return 0
+        except cfg.DenyFileMissing as e:   # fail closed
+            sys.exit(f"bot-item: {e}")
+        meta = {k: v for k, v in {"do": getattr(a, "do", None), "why": getattr(a, "why", None), "cost": getattr(a, "cost", None), "verb": getattr(a, "verb", None)}.items() if v and v.strip()}
+        payload = (decision_body(a.id, a.title, body, a.actions, a.urgency, a.source, a.loud, a.action, meta=meta) if a.cmd == "decision"
+                   else decision_body(a.id, a.title, body, DEFAULT_ACTIONS, a.urgency, "card", a.loud, a.action, a.link, a.source_label, a.copy, details=True, meta=meta) if a.cmd == "card"
+                   else put_body(a.kind, a.id, a.title, body, a.fix, a.start, a.expires_in_min, a.loud))
+        r = request("POST", "/items", payload)
+        print(f"{r['id']}: {r['result']}, state {r['state']}, message {r['message_id']}")  # type: ignore[call-overload]
+        for e in r.get("render_errors", []):  # type: ignore[union-attr]
+            print(f"render error: {e}", file=sys.stderr)
+    elif a.cmd == "list":
+        qs = urllib.parse.urlencode({k: v for k, v in {"state": a.state, "kind": a.kind}.items() if v})
+        items = request("GET", f"/items?{qs}")
+        if a.json:
+            print(json.dumps(items, ensure_ascii=False))
+            return 0
+        for i in items:  # type: ignore[union-attr]
+            print(f"{i['state']:8} {i['urgency']:5} {i['id']}  {i['title']}")
+    else:
+        state = "new" if a.cmd == "reopen" else "expired" if a.cmd == "close" and a.expire else "dropped" if a.drop else "done"
+        r = request("POST", f"/items/{q(a.id, safe='')}/state", {"state": state})
+        print(f"{r['id']}: {r['state']}{'' if r['changed'] else ' (no change)'}")  # type: ignore[call-overload]
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Start (or reattach) a Claude Code session that your Telegram bot chat is wired into.
+#
+#   bin/live-session                     a fresh session in $LIVE_SESSION_CWD (default: your home directory)
+#   bin/live-session --resume <id>       reattach a session by its Claude session id
+#   bin/live-session -c                  continue the last session of this directory
+#
+# Everything after the script name goes to claude. The channel is bin/tg-channel (an MCP server over stdio);
+# claude shows a confirmation screen for --dangerously-load-development-channels on every start (custom channels
+# are not on the research-preview allowlist). Plain messages in the bot chat go to this session while it runs;
+# when it exits they go back to the normal queue.
+set -euo pipefail
+
+pult="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+work="${PULT_WORK:-$pult/_work}"
+cfg="$work/live-session-mcp.json"
+mkdir -p "$work"
+python3 - "$cfg" "$pult/bin/tg-channel" <<'PY'
+import json, sys
+cfg, script = sys.argv[1:]
+with open(cfg, "w") as f:
+    json.dump({"mcpServers": {"telegram": {"command": "python3", "args": [script]}}}, f, indent=2)
+PY
+
+cd "${LIVE_SESSION_CWD:-$HOME}"
+exec claude --mcp-config "$cfg" --dangerously-load-development-channels server:telegram "$@"
