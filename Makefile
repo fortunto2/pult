@@ -31,6 +31,7 @@ hooks:  ## install the pre-commit hook that runs check-public
 release:  ## V=0.2.0: tests, scan, then an annotated tag (CHANGELOG.md must have a section for it). No push.
 	@test -n "$(V)" || { echo "usage: make release V=x.y.z"; exit 2; }
 	@grep -q "^## $(V) " CHANGELOG.md || { echo "CHANGELOG.md has no '## $(V) ' section"; exit 1; }
+	scripts/release-guard.sh
 	$(MAKE) test lint
 	$(MAKE) check-public H=1
 	git tag -a v$(V) -m "pult $(V)"

@@ -4,6 +4,7 @@ Semantic versions. A core change is made here first; a private layer bumps its s
 
 ## Unreleased
 
+- `make release` refuses to tag a commit that is not on `origin/main` (`scripts/release-guard.sh`, tested): v0.6.3 was once tagged on a commit no branch held.
 - `docs/migration.md` removed: it was one private bot's plan for moving onto the core, of no use to someone starting fresh. The submodule workflow it held (core changes made in `core/`, the scrub hook there) is in `docs/extending.md`.
 
 ## 0.6.3 (2026-11-19)
