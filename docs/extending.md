@@ -110,6 +110,27 @@ def workflows():                         # optional
 - A plugin that fails to import stops `pult-run` at startup (exit 78), loudly. It is never skipped silently.
 - Paths and keys come from the environment only (`pult.paths`); `PULT_WORKFLOWS` replaces the packaged `workflows.json` entirely.
 
+### Plugin hooks beyond actions (`pult.hooks`)
+
+The same module may define any of these; each is optional. They are what lets a private layer keep a deny wall, a translation or a feed policy
+without forking the scripts:
+
+| Hook | Used by | Does |
+|---|---|---|
+| `wall() -> list[re.Pattern]` | `bot-say`, `bot-item` | patterns an outgoing line or item must not match (added to `PULT_DENY_FILE`); raise `pult.paths.DenyFileMissing` when it cannot be loaded and every script refuses to send |
+| `strings() -> dict` | everything the owner reads | replaces any key of `pult.i18n.DEFAULTS` (a translation, other wording); the worker has the same table |
+| `agent_rules()`, `draft_rules()` | `session-run` | appended to the fixed rules of a chat turn and of a restricted read-and-draft job |
+| `item_args(cmd, parser)` | `bot-item decision/card/put` | extra flags |
+| `item_gate(cmd, args, body)` | `bot-item` | `("skip", line)` prints and writes nothing, `("refuse", text)` exits |
+| `item_payload(cmd, args, payload)` | `bot-item` | the last look at the body before the POST (urgency by date, extra fields) |
+| `item_after(cmd, args, result)` | `bot-item` | lines printed after a write (a draft attached, a cap applied) |
+| `item_commands()` | `bot-item` | extra subcommands: `{name: (configure(parser), run(args, request) -> int)}` |
+
+A handler's `ctx` also carries `fetch_files()`, `transcribe(path)` and `card()` (the card the event came from, read with the owner's key) for actions
+such as a reply drafter: write the text to a file in `{WORK}/drafts/`, return an `ActionResult` with `item_result="reopen"` on a stop or failure,
+and let a plain script (never the model) do anything that leaves the machine. `pult-run` requires `register()` of every plugin; the CLI tools only
+call the hooks.
+
 The Python test for the toy plugin is `tests/test_actions_and_plugins.py`; the worker test for its other half is `worker/examples/toy.test.ts`.
 
 ## A Mini App panel

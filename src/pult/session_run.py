@@ -474,6 +474,18 @@ def put_detail(item_id: str, text: str) -> bool:
     return p.returncode == 0
 
 
+def item_card(item_id: str) -> dict:
+    """The card from the store, read by the trusted side (`bot-item get` with the owner's key), never from the job's own words."""
+    if not item_id:
+        return {}
+    p = subprocess.run([*cfgmod.script_argv("bot-item", "pult.items"), "get", item_id], capture_output=True, text=True, check=False, timeout=60)
+    try:
+        item = json.loads(p.stdout)
+    except ValueError:
+        return {}
+    return item if isinstance(item, dict) else {}
+
+
 def _workflow_name(ev: dict, sess: dict, registered: str) -> str:
     """An event with an item_id (card button, «More», reply to a card) runs in `draft`, whatever the session or the registration says."""
     if ev.get("item_id"):
@@ -601,7 +613,9 @@ def main_event(cfg: Cfg, ev: dict, registry: Registry | None = None) -> int:
     if name == "draft":
         (cfgmod.WORK / "drafts").mkdir(parents=True, exist_ok=True)
     ctx = Ctx(cfg=cfg, ev=ev, sess=sess, session_id=sess["id"], workflow=name, wf=wf, cwd=cwd, call=lambda method, path, body=None, raw=False: call(cfg, method, path, body, raw),
-              say=lambda text, **kw: say(cfg, sid, text, **kw), run_claude=lambda prompt: _plugin_claude(ctx, prompt))
+              say=lambda text, **kw: say(cfg, sid, text, **kw), run_claude=lambda prompt: _plugin_claude(ctx, prompt),
+              fetch_files=lambda: fetch_files(cfg, ev, cfg.sessions_dir / sess["id"] / "inbox"), transcribe=lambda path: transcribe(cfg, wf, path),
+              card=lambda: item_card(ev.get("item_id") or ""))
     res = action.handler(ev, ctx)
     if res is None:   # the lease is gone: another runner owns the event, so no answer and no ack from here
         return 4

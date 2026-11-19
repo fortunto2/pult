@@ -61,6 +61,9 @@ class Ctx:
     call         call(method, path, body=None, raw=False): one authenticated JSON call to the worker (runner key)
     say          say(text, **kw): post a message in the session now (extra keys go to POST /sessions/<id>/say)
     run_claude   run_claude(prompt) -> ActionResult: one turn in this event's workflow, a fresh Claude session. Opt in; a handler that never calls it never reaches the model
+    fetch_files  fetch_files() -> (saved, refused): the event's files downloaded into the session inbox; saved items carry kind, path, name
+    transcribe   transcribe(path) -> str | None: a voice file as text with the workflow's transcriber (None: it failed or passed the cap)
+    card         card() -> dict: the item the event came from, read through the owner's own key (`bot-item get`), {} when there is none
     """
 
     cfg: Any
@@ -73,6 +76,9 @@ class Ctx:
     call: Callable[..., Any]
     say: Callable[..., Any]
     run_claude: Callable[[str], ActionResult]
+    fetch_files: Callable[[], Any] | None = None
+    transcribe: Callable[[str], str | None] | None = None
+    card: Callable[[], dict] | None = None
     extra: dict = field(default_factory=dict)
 
 
