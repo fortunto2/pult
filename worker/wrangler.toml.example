@@ -1,6 +1,6 @@
 # Copy to wrangler.toml and fill the placeholders. wrangler.toml is git-ignored.
 name = "pult"
-main = "index.ts"
+main = "src/index.ts"
 compatibility_date = "2026-08-01"
 
 # Hourly tick: expire undecided cards, wake snoozed ones, retry a render that failed.

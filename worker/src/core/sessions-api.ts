@@ -2,7 +2,7 @@
 import { mdToTg } from './mdtg.ts';
 import { MAX_FILE } from './chat.ts';
 import type { Env } from './env.ts';
-import { beat, clearLiveSeen, depth, finish, getEvent, pull, recordLiveSeen } from './queue.ts';
+import { beat, clearLiveSeen, depth, finish, getEvent, pull, recordLiveSeen, type QEvent } from './queue.ts';
 import { reconcile } from './reconcile.ts';
 import { applyAction, applyUnwork, getItem } from './store.ts';
 import { clearKeyedMessage, keyedMessage, pausedUntil, setKeyedMessage, setPause } from './settings.ts';
@@ -17,7 +17,7 @@ export interface FileProxy { getFile(fileId: string): Promise<{ file_path?: stri
 const lease = (b: Record<string, unknown>) => (typeof b.lease_id === 'string' && b.lease_id ? b.lease_id : undefined);
 export const isQueuePath = (p: string) => /^\/(events|sessions|files|pause)(\/|$)/.test(p);
 
-export async function sessionsRoute(req: Request, u: URL, env: Env, deps: { tg: Tg; files: FileProxy; tz?: string }, now = Date.now()): Promise<Response | null> {
+export async function sessionsRoute(req: Request, u: URL, env: Env, deps: { tg: Tg; files: FileProxy; tz?: string; onAck?: (ev: QEvent, ack: { status: 'done' | 'failed' | 'stopped' | 'requeue'; body: Body }) => Promise<void> }, now = Date.now()): Promise<Response | null> {
   const p = u.pathname;
   if (!isQueuePath(p)) return null;
   const owner = Number(env.CHAT_ID), tz = deps.tz ?? 'UTC';
@@ -54,7 +54,19 @@ export async function sessionsRoute(req: Request, u: URL, env: Env, deps: { tg: 
         if (changed) await reconcile(env.DB, deps.tg, ev.user_id, now, tz);
       }
     }
+    if (ok && ev && deps.onAck) await deps.onAck(ev, { status, body: b }).catch(e => console.error('onAck failed', e));   // an extension's follow-up never fails the ack
     return json({ ok });
+  }
+  m = /^\/sessions\/([^/]+)\/draft$/.exec(p);
+  if (req.method === 'POST' && m) {   // streamed progress: sendMessageDraft. {ok:false, fallback:true} tells the runner to edit a message instead
+    const s = await getSession(env.DB, m[1]);
+    if (!s || s.user_id !== owner) return json({ error: 'no such session' }, 404);
+    const b = await body();
+    const draftId = Number(b.draft_id);
+    if (!Number.isInteger(draftId) || draftId === 0) return json({ error: 'draft_id: non-zero integer' }, 400);
+    if (env.PROGRESS_DRAFTS === '0' || !deps.tg.draft) return json({ ok: false, fallback: true });
+    try { await deps.tg.draft(s.user_id, draftId, String(b.text ?? ''), b.can_stop !== false); return json({ ok: true }); }
+    catch (e) { console.error('draft refused', String((e as Error).message ?? e).slice(0, 200)); return json({ ok: false, fallback: true }); }   // client or API without drafts, a rate limit, a group chat: the edit path carries on
   }
   if (req.method === 'POST' && p === '/pause') {
     const until = Number((await body()).until);

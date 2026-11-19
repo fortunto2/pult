@@ -11,6 +11,8 @@ export interface Tg {
   editMarkup(chat: number, messageId: number, markup: Markup): Promise<void>;   // keyboard only: the "Later" menu opens and closes without touching the text
   delete(chat: number, messageId: number): Promise<void>;
   answerCallback(id: string, text: string): Promise<void>;
+  /** Bot API 9.3+: a streamed draft (30 s ephemeral preview; the final answer is a normal send). Empty text shows "Thinking...". True when Telegram took it. */
+  draft(chat: number, draftId: number, text: string, canStop: boolean): Promise<boolean>;
 }
 
 const NO_PREVIEW = { is_disabled: true };
@@ -36,6 +38,7 @@ export const grammyTg = (api: Api): Tg => ({
   editMarkup: async (chat, id, markup) => { await api.editMessageReplyMarkup(chat, id, { reply_markup: markup }); },
   delete: async (chat, id) => { await api.deleteMessage(chat, id); },
   answerCallback: async (id, text) => { await api.answerCallbackQuery(id, { text }); },
+  draft: async (chat, draftId, text, canStop) => { await api.sendMessageDraft(chat, draftId, text.slice(0, 4096), canStop ? { can_stop: true } : {}); return true; },
 });
 
 const has = (e: unknown, re: RegExp) => re.test(String((e as Error)?.message ?? e));

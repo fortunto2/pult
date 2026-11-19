@@ -5,7 +5,7 @@ import type { Tg } from './tg.ts';
 
 export function makeDb(): D1Database {
   const db = new DatabaseSync(':memory:');
-  db.exec(readFileSync(new URL('../schema.sql', import.meta.url), 'utf8'));
+  db.exec(readFileSync(new URL('../../schema.sql', import.meta.url), 'utf8'));
   const stmt = (sql: string, args: unknown[] = []) => {
     const s: any = {
       bind: (...a: unknown[]) => stmt(sql, a),
@@ -26,7 +26,7 @@ export function makeDb(): D1Database {
   } as unknown as D1Database;
 }
 
-export interface Call { op: string; chat?: number; id?: number; pm?: string; markup?: unknown; text?: string; silent?: boolean; plain?: string; replyTo?: number }
+export interface Call { op: string; draftId?: number; canStop?: boolean; chat?: number; id?: number; pm?: string; markup?: unknown; text?: string; silent?: boolean; plain?: string; replyTo?: number }
 export function fakeTg(): Tg & { calls: Call[]; failNext: (re: string) => void } {
   const calls: Call[] = [];
   let next = 100, fail: string | null = null;
@@ -39,6 +39,7 @@ export function fakeTg(): Tg & { calls: Call[]; failNext: (re: string) => void }
     editMarkup: async (chat, id, markup) => { maybeFail(); calls.push({ op: 'markup', chat, id, markup }); },
     delete: async (chat, id) => { maybeFail(); calls.push({ op: 'delete', chat, id }); },
     answerCallback: async (_id, text) => { calls.push({ op: 'answer', text }); },
+    draft: async (chat, draftId, text, canStop) => { maybeFail(); calls.push({ op: 'draft', chat, draftId, text, canStop }); return true; },
   };
 }
 export const noSleep = async () => undefined;

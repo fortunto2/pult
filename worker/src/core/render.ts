@@ -3,7 +3,11 @@
 import { ACTIONS, type Item } from './contract.ts';
 
 type Style = { style?: 'danger' | 'success' | 'primary' }   // Bot API: coloured inline button
-export type Button = ({ text: string; callback_data: string } | { text: string; copy_text: { text: string } } | { text: string; url: string }) & Style
+export type Button = ({ text: string; callback_data: string } | { text: string; copy_text: { text: string } } | { text: string; url: string } | { text: string; disabled: Record<string, never> }) & Style
+
+/** Button decoration, switched per deployment (BUTTON_STYLES=0, BUTTON_DISABLED=0): coloured styles (Bot API 9.4) and a disabled button while a card's job runs (10.3). Unverified on older clients, so they can be turned off. */
+export const buttonOptions = { styles: true, disabled: true };
+export const setButtonOptions = (env: { BUTTON_STYLES?: string; BUTTON_DISABLED?: string }) => { buttonOptions.styles = env.BUTTON_STYLES !== '0'; buttonOptions.disabled = env.BUTTON_DISABLED !== '0'; };
 export interface Markup { inline_keyboard: Button[][] }
 export interface Op {
   kind: 'send' | 'edit' | 'delete';
@@ -62,8 +66,8 @@ export function keyboard(item: Item, withCustom = true, menu = false): Markup {
   const p = payloadOf(item);
   const verb = p.meta?.verb;
   const label = (a: string) => (a === 'done' ? `✅ ${verb ?? ACTIONS.done.label}` : a === 'drop' ? `✖️ ${ACTIONS.drop.label}` : ACTIONS[a].label);
-  const hot = item.urgency === 'now' ? 'danger' : item.urgency === 'today' ? 'primary' : 'success';
-  const btn = (a: string): Button => ({ text: label(a), callback_data: callbackData(item.short, a), ...(a === 'done' ? { style: hot } : {}) } as Button);
+  const styleOf = (a: string): Style => (!buttonOptions.styles ? {} : a === 'done' ? { style: 'success' } : a === 'drop' ? { style: 'danger' } : {});   // done green, not needed red, later and the rest default
+  const btn = (a: string): Button => ({ text: label(a), callback_data: callbackData(item.short, a), ...styleOf(a) } as Button);
   const customs = withCustom ? item.custom : [];
   const details = customs.find(c => c.label === DETAILS);
   const cb = (c: { id: string; label: string }): Button => ({ text: c.label, callback_data: callbackData(item.short, c.id) });   // the instruction stays in the store
@@ -85,6 +89,13 @@ export function keyboard(item: Item, withCustom = true, menu = false): Markup {
   if (!menu) for (let i = 0; i < others.length; i += 2) rows.push(others.slice(i, i + 2));
   else rows.push(...others.map(b => [b]));
   return { inline_keyboard: rows.filter(r => r.length) };
+}
+
+/** While a card's job runs: Done and Later stay live, the custom button that started the job is shown greyed out and does nothing. */
+export function workingKeyboard(item: Item): Markup {
+  const m = keyboard(item, false);
+  const running = buttonOptions.disabled ? item.custom.find(c => c.instruction === item.working) : undefined;
+  return running ? { inline_keyboard: [...m.inline_keyboard, [{ text: `⏳ ${running.label}`, disabled: {} }]] } : m;
 }
 
 const renderKey = (item: Item, now: number) => `${item.hash}:${item.kind === 'decision' ? hanging(item, now) : 0}${item.working ? ':w' + item.working : ''}${payloadOf(item).detail ? ':d' + payloadOf(item).detail!.length : ''}`;
@@ -146,7 +157,7 @@ export function render(items: Item[], now: number, opts: RenderOpts = {}): Op[] 
     if (item.state === 'snoozed' && item.working !== null && item.msg_state === 'live') {
       // working: one line, the done and later buttons stay (the custom ones are spent)
       const line = `⏳ working: ${item.working.slice(0, 60)}`;
-      if (item.rendered_hash !== renderKey(item, now)) ops.push({ kind: 'edit', effect: 'update', item, message_id: mid, pm: esc(line), text: line, markup: keyboard(item, false), key: renderKey(item, now) });
+      if (item.rendered_hash !== renderKey(item, now)) ops.push({ kind: 'edit', effect: 'update', item, message_id: mid, pm: esc(line), text: line, markup: workingKeyboard(item), key: renderKey(item, now) });
     } else if (open(item)) {
       if (item.msg_state === 'live') { if (item.rendered_hash !== renderKey(item, now)) ops.push(editOp(item)); }
       else ops.push(sendOp(item, !ring(item.loud), item.msg_state === 'collapsed' ? mid : undefined));

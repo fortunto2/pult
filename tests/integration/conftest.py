@@ -1,4 +1,4 @@
-"""The real worker (`wrangler dev --local`, a fresh local D1 from worker/schema.sql) against a Telegram stub.
+"""The real worker (`wrangler dev --local`, an empty local D1 the worker migrates itself) against a Telegram stub.
 
 Run with INTEGRATION=1 (`make integration`). One wrangler process at a time: this fixture starts exactly one for the whole session.
 """
@@ -123,13 +123,12 @@ def stack(tmp_path_factory):
     tg = TelegramStub()
     port = free_port()
     toml = tmp / "wrangler.toml"
-    toml.write_text(f'name = "pult-integration"\nmain = "{WORKER / "index.ts"}"\ncompatibility_date = "2026-08-01"\n'
+    toml.write_text(f'name = "pult-integration"\nmain = "{WORKER / "src" / "index.ts"}"\ncompatibility_date = "2026-08-01"\n'
                     f'[[d1_databases]]\nbinding = "DB"\ndatabase_name = "pult"\ndatabase_id = "00000000-0000-0000-0000-000000000000"\n'
                     f'[vars]\nCHAT_ID = "{OWNER}"\nOWNER_TZ = "UTC"\nTELEGRAM_API_ROOT = "{tg.root}"\nTELEGRAM_BOT_TOKEN = "{TOKEN}"\nTG_SECRET = "{TG_SECRET}"\nRUN_KEY = "{RUN_KEY}"\n')
     state = tmp / "state"
     base = ["npx", "--yes", "wrangler@4"]
-    subprocess.run([*base, "d1", "execute", "pult", "--local", "--config", str(toml), "--persist-to", str(state), "--file", str(WORKER / "schema.sql")],
-                   cwd=WORKER, check=True, capture_output=True, text=True, timeout=180)
+    # no schema step: the worker migrates its own empty D1 on the first request
     proc = subprocess.Popen([*base, "dev", "--local", "--config", str(toml), "--persist-to", str(state), "--port", str(port), "--ip", "127.0.0.1"],
                             cwd=WORKER, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     url = f"http://127.0.0.1:{port}"

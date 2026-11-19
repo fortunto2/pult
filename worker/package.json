@@ -1,8 +1,17 @@
 {
   "name": "pult-worker",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "license": "MIT",
+  "description": "pult worker core: createApp({ extensions }) for Cloudflare Workers + D1",
+  "main": "./src/lib.ts",
+  "types": "./src/lib.ts",
+  "exports": {
+    ".": "./src/lib.ts",
+    "./testkit": "./src/core/testkit.ts",
+    "./tgstub": "./src/core/tgstub.ts"
+  },
   "dependencies": {
     "grammy": "1.46.0"
   },
@@ -12,7 +21,8 @@
     "typescript": "^5.6.3"
   },
   "scripts": {
-    "test": "node --experimental-strip-types --disable-warning=ExperimentalWarning --test src/*.test.ts",
-    "typecheck": "tsc -p ."
+    "test": "node --experimental-strip-types --disable-warning=ExperimentalWarning --test src/core/*.test.ts src/core/miniapp/*.test.ts examples/*.test.ts",
+    "typecheck": "tsc -p .",
+    "gen-schema": "node scripts/gen-schema.mjs"
   }
 }

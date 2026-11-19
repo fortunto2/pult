@@ -1,7 +1,7 @@
 // What the bot does with your words: resolve the session, queue the turn, answer the commands.
 // Pure over D1 so the tests drive it directly; index.ts only does the Telegram side (react, reply).
 import type { ItemEvent } from './replies.ts';
-import { depth, enqueue, requestStop, type QEvent } from './queue.ts';
+import { depth, enqueue, getEvent, requestStop, type QEvent } from './queue.ts';
 import { listSessions, newSession, recordMsg, resolveSession, setTarget, targetOf, touch, type Session } from './sessions.ts';
 import { getSetting, pausedUntil, putSetting } from './settings.ts';
 
@@ -71,6 +71,13 @@ export async function cmdStop(env: { DB: D1Database }, userId: number, replyTo: 
   const target = replyTo ? (await resolveSession(env.DB, userId, { replyTo }, now, tz)).session : await targetOf(env.DB, userId, now, tz) ?? (await resolveSession(env.DB, userId, {}, now, tz)).session;
   const r = await requestStop(env.DB, userId, target.id, now);
   return r.running || r.dropped ? `Stopping "${target.title}"${r.running ? ' (up to 20 s)' : ''}${r.dropped ? `, removed from the queue: ${r.dropped}` : ''}.` : `Nothing is running in "${target.title}".`;
+}
+/** The stop button on a streamed draft (update `stopped_message_generation`): the draft id is the event id the runner streamed for, so it stops exactly that turn.
+ *  An id we do not know falls back to the current target session, like /stop. */
+export async function stopDraft(env: { DB: D1Database }, userId: number, draftId: number | undefined, now: number, tz: string): Promise<string> {
+  const ev = draftId ? await getEvent(env.DB, draftId) : null;
+  if (ev && ev.user_id === userId && ev.session_id) return `${(await requestStop(env.DB, userId, ev.session_id, now)).running ? 'stopping' : 'nothing running'}`;
+  return cmdStop(env, userId, undefined, now, tz);
 }
 export async function statusLine(env: { DB: D1Database }, now: number, tz: string): Promise<string> {
   const d = await depth(env.DB), until = await pausedUntil(env.DB, now);

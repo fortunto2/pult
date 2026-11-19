@@ -1,5 +1,5 @@
 // Hand-written from contracts/*.json. A change to an action or a field needs a test update (contract.test.ts).
-import actionsJson from '../contracts/actions.json' with { type: 'json' };
+import actionsJson from '../../contracts/actions.json' with { type: 'json' };
 
 export type Kind = 'decision' | 'inbox' | 'digest' | 'incident' | 'meeting';
 export type Urgency = 'now' | 'today' | 'week';
