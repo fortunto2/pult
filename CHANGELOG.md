@@ -2,7 +2,10 @@
 
 Semantic versions. A core change is made here first; a private layer bumps its submodule to the tag. The extension API (`worker/src/lib.ts`, `pult.actions`, `pult.plugins`) follows semver: a breaking change to a hook is a major version. Anything under `worker/src/core/` that `lib.ts` does not export is internal and may change in a minor release.
 
-## Unreleased
+## 0.5.0 (2026-11-19)
+
+Extension seams used by a complete private layer (shell options, keyed credentials, command override, queue hooks).
+
 
 - `tg-channel`: the one-line file notes go through the string table (`channel.file_note`), so a translation covers them.
 
