@@ -26,7 +26,7 @@ check-public:  ## scan the tree for ids, hosts, keys and your own patterns (PULT
 	scripts/check-public.sh $(if $(H),--history,)
 
 hooks:  ## install the pre-commit hook that runs check-public
-	ln -sf ../../scripts/pre-commit .git/hooks/pre-commit
+	@h=$$(git rev-parse --git-path hooks) && mkdir -p "$$h" && ln -sf "$$(pwd)/scripts/pre-commit" "$$h/pre-commit"   # works in a plain clone and inside a private repo's core/ submodule (.git is a file there)
 
 release:  ## V=0.2.0: tests, scan, then an annotated tag (CHANGELOG.md must have a section for it). No push.
 	@test -n "$(V)" || { echo "usage: make release V=x.y.z"; exit 2; }
