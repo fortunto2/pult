@@ -37,6 +37,7 @@ def claim_wire() -> None:
 
 VERSION = "0.1.0"
 from pult import paths as cfgmod  # noqa: E402
+from pult.i18n import t as tr
 
 UA = cfgmod.UA
 PERMISSION_REPLY = re.compile(r"^\s*(y|yes|n|no)\s+([a-km-z]{5})\s*$", re.I)
@@ -110,11 +111,11 @@ def fetch_files(cfg: Cfg, sid: str, ev: dict) -> list[str]:
             inbox.mkdir(parents=True, exist_ok=True)
             path = inbox / f"{ev['id']}-{name}"
             path.write_bytes(call(cfg, "GET", f"/files/{f['file_id']}?event={ev['id']}", raw=True))
-            lines.append(f"[file {f.get('kind', 'file')}: {path}]")
+            lines.append(tr("channel.file", kind=f.get("kind", "file"), path=path))
         except urllib.error.HTTPError as e:
-            lines.append(f"[file {name}: {'larger than 20 MB, not downloaded' if e.code == 413 else 'download failed'}]")
+            lines.append(f"[file {name}: {tr('channel.too_big') if e.code == 413 else tr('channel.download_failed')}]")
         except OSError:
-            lines.append(f"[file {name}: download failed, network]")
+            lines.append(tr("channel.download_failed_net", name=name))
     return lines
 
 
@@ -133,7 +134,7 @@ class Channel:
         self.sid = r["id"]
         log(f"attached to session {self.sid}")
         if first and self.cfg.hello:
-            self.say("Live session attached. Write here, the answer comes from the terminal.")
+            self.say(tr("channel.attached"))
 
     def detach(self) -> None:
         if not self.sid:
@@ -167,8 +168,8 @@ class Channel:
 
     # --- Claude Code calls this when a tool-approval dialog opens ---
     def permission_request(self, p: dict) -> None:
-        text = (f"Claude wants to run {p.get('tool_name')}: {p.get('description')}\n{p.get('input_preview', '')}"[:3000]
-                + f"\n\nAnswer \"yes {p.get('request_id')}\" or \"no {p.get('request_id')}\"")
+        text = (tr("channel.approve_head", tool=p.get("tool_name"), description=p.get("description"), preview=p.get("input_preview", ""))[:3000]
+                + tr("channel.approve_tail", id=p.get("request_id")))
         try:
             self.say(text, fmt="plain", loud=True)
         except (OSError, ValueError) as e:
@@ -182,7 +183,7 @@ class Channel:
             notify("notifications/claude/channel/permission", {"request_id": m.group(2).lower(), "behavior": "allow" if m.group(1).lower().startswith("y") else "deny"})
         else:
             files = fetch_files(self.cfg, self.sid or "", ev)
-            body = "\n".join(p for p in [text, *files] if p) or "(empty message)"
+            body = "\n".join(p for p in [text, *files] if p) or tr("channel.empty")
             notify("notifications/claude/channel", {"content": body, "meta": {"message_id": str(ev.get("reply_to") or 0), "event": str(ev["id"])}})   # Claude Code rejects non-string meta and drops the connection
             self.last_msg = ev.get("reply_to") or self.last_msg
 

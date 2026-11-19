@@ -115,13 +115,16 @@ def test_card_is_a_decision_with_link_source_and_an_automatic_details_button():
     b = bi.decision_body("mail:t1", "Sam: invoice", "Pay by Friday", bi.DEFAULT_ACTIONS, "today", "card", False, None,
                          "https://mail.example.test/t1", "Mail", None, details=True)
     assert b["kind"] == "decision" and b["payload"] == {"link": "https://mail.example.test/t1", "source_label": "Mail", "card": True}
-    assert b["custom_actions"][0]["label"] == bi.DETAILS_LABEL and len(b["custom_actions"][0]["instruction"]) <= 300
+    from pult.i18n import t
+
+    assert b["custom_actions"][0]["label"] == t("item.details_label") and len(b["custom_actions"][0]["instruction"]) <= 300
 
 
 def test_details_instruction_starts_with_the_phrase_session_run_routes_on():
     from pult import session_run as sr
+    from pult.i18n import t
 
-    assert bi.DETAILS_INSTRUCTION.startswith(sr.DETAILS_HEAD)
+    assert t("item.details_instruction").startswith(sr.DETAILS_HEAD)
 
 
 def test_a_denied_item_writes_nothing(tmp_path, monkeypatch, capsys):
@@ -130,3 +133,132 @@ def test_a_denied_item_writes_nothing(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(bi, "request", lambda *a, **k: pytest.fail("nothing may be written"))
     assert bi.main(["decision", "--id", "a", "--title", "Reply to SecretCo"]) == 0
     assert "filtered" in capsys.readouterr().out
+
+
+def test_card_direct_hold_and_contract_fields_go_into_the_payload_only_when_set():
+    assert "direct" not in (bi.decision_body("tg:-1", "t", details=True).get("payload") or {})
+    assert bi.decision_body("tg:-1", "t", details=True, direct=True)["payload"]["direct"] is True
+    assert "hold" not in bi.decision_body("a", "t") and bi.decision_body("a", "t", hold=True)["hold"] is True
+    b = bi.decision_body("a", "t", hard_due="2026-11-30", meta={"money": True})
+    assert b["payload"]["meta"] == {"money": True, "hard_due": "2026-11-30"}
+    with pytest.raises(SystemExit):
+        bi.decision_body("a", "t", hard_due="30.11")
+
+
+def test_a_telegram_user_link_is_a_valid_card_link():
+    assert bi.decision_body("a", "t", link="tg://user?id=42")["payload"]["link"] == "tg://user?id=42"
+    with pytest.raises(SystemExit):
+        bi.decision_body("a", "t", link="tg://user?id=x")
+
+
+def test_answers_become_buttons_at_most_three():
+    assert bi.parse_answers("Yes=yes, No=no") == [{"label": "Yes", "value": "yes"}, {"label": "No", "value": "no"}]
+    for bad in ("Yes", "a=1,b=2,c=3,d=4", "=x"):
+        with pytest.raises(SystemExit):
+            bi.parse_answers(bad)
+
+
+def test_seen_lines_round_trip_the_item_seen_format():
+    assert bi.parse_seen_lines("gmail:x\tNotion closes\nnot a line\n tg:y \t facts ") == [
+        {"id": "gmail:x", "text": "Notion closes"}, {"id": "tg:y", "text": "facts"}]
+    out = bi.format_seen([{"status": "NEW", "id": "a", "text": "t1"}, {"status": "OLD", "id": "b", "days": 3, "text": "t2"},
+                          {"status": "CHANGED", "id": "c", "text": "t3"}])
+    assert out == ["NEW\ta\tt1", "OLD\tb\t3\tt2", "CHANGED\tc\tt3", "# new=1 changed=1 old=1"]
+
+
+def test_tz_label_reads_like_a_zone_not_an_offset():
+    assert bi.tz_label("America/New_York") == "New York" and bi.tz_label("UTC") == "UTC"
+
+
+def test_now_falls_back_to_the_local_clock_when_the_worker_is_down(monkeypatch, capsys):
+    monkeypatch.setattr(bi, "request", lambda *a, **k: (_ for _ in ()).throw(SystemExit("down")))
+    assert bi.main(["now"]) == 0
+    assert capsys.readouterr().out.strip().count(":") == 1
+
+
+def test_seen_command_prints_lines_and_the_wall_drops_denied_ones(monkeypatch, capsys, tmp_path):
+    import io
+
+    (tmp_path / "deny.txt").write_text("secretco\n")
+    monkeypatch.setenv("PULT_DENY_FILE", str(tmp_path / "deny.txt"))
+    monkeypatch.setattr("sys.stdin", io.StringIO("a\tx\nb\tabout SecretCo\n"))
+    sent = []
+    monkeypatch.setattr(bi, "request", lambda m, p, b=None: sent.append(b) or {"results": [{"status": "NEW", "id": "a", "text": "x"}]})
+    bi.main(["seen", "sweep"])
+    assert sent[0]["items"] == [{"id": "a", "text": "x"}]
+    assert capsys.readouterr().out.splitlines() == ["NEW\ta\tx", "# new=1 changed=0 old=0"]
+
+
+def test_reply_draft_posts_text_with_its_hash(monkeypatch, capsys):
+    import hashlib
+
+    seen = []
+    monkeypatch.setattr(bi, "request", lambda m, p, b=None: seen.append((m, p, b)) or {"changed": True})
+    monkeypatch.setattr("sys.stdin", __import__("io").StringIO("Hi! See you at 7.\n"))
+    assert bi.main(["reply-draft", "tg:55", "--ring", "--missing", " the time "]) == 0
+    m, path, body = seen[0]
+    assert (m, path) == ("POST", "/items/tg%3A55/reply-draft") and body["text"] == "Hi! See you at 7." and body["ring"] is True and body["missing"] == "the time"
+    assert body["hash"] == hashlib.sha256(b"Hi! See you at 7.").hexdigest()
+    assert "attached" in capsys.readouterr().out
+
+
+def test_flag_progress_draft_sets_and_shows_the_d1_row(monkeypatch, capsys):
+    calls = []
+
+    def fake(method, path, body=None):
+        calls.append((method, path, body))
+        return {"value": "0"} if method == "GET" else {"ok": True}
+
+    monkeypatch.setattr(bi, "request", fake)
+    assert bi.main(["flag", "progress-draft", "off"]) == 0
+    assert calls[0] == ("POST", "/owner/flag", {"key": "PROGRESS_DRAFT", "value": "0"}) and "off" in capsys.readouterr().out
+    calls.clear()
+    bi.main(["flag", "progress-draft", "show"])
+    assert [c[0] for c in calls] == ["GET"]
+
+
+PLUGIN = """
+def item_args(cmd, parser):
+    if cmd == "card":
+        parser.add_argument("--tg-urgent")
+
+def item_gate(cmd, args, body):
+    if cmd == "card" and args.id.startswith("tg:") and not args.tg_urgent:
+        return ("skip", args.id + ": skipped, a chat item needs --tg-urgent")
+    if cmd == "decision" and not args.why:
+        return ("refuse", "a decision says why it exists: --why")
+
+def item_payload(cmd, args, payload):
+    return {**payload, "source": "plugin"}
+
+def item_after(cmd, args, result):
+    return ["after " + result["id"]]
+
+def item_commands():
+    def configure(p):
+        p.add_argument("word")
+    def run(args, request):
+        print("ran " + args.word + " " + str(request("GET", "/ping")))
+        return 0
+    return {"shout": (configure, run)}
+"""
+
+
+def test_plugin_hooks_gate_extend_and_add_subcommands(monkeypatch, tmp_path, capsys):
+    import sys
+
+    (tmp_path / "itemplug.py").write_text(PLUGIN)
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.setenv("PULT_PLUGINS", "itemplug")
+    sys.modules.pop("itemplug", None)
+    sent = []
+    monkeypatch.setattr(bi, "request", lambda m, p, b=None: sent.append((m, p, b)) or {"id": "x", "result": "created", "state": "new", "message_id": 5})
+    assert bi.main(["card", "--id", "tg:1", "--title", "t"]) == 0
+    assert "needs --tg-urgent" in capsys.readouterr().out and not sent
+    with pytest.raises(SystemExit) as e:
+        bi.main(["decision", "--id", "d", "--title", "t"])
+    assert "--why" in str(e.value) and not sent
+    assert bi.main(["card", "--id", "tg:1", "--title", "t", "--tg-urgent", "now"]) == 0
+    assert sent[0][2]["source"] == "plugin" and "after x" in capsys.readouterr().out
+    assert bi.main(["shout", "hey"]) == 0
+    assert "ran hey" in capsys.readouterr().out
