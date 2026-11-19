@@ -1,0 +1,7 @@
+# Your personal scrub list. Copy to ~/.config/pult/scrub-patterns.txt (or point PULT_SCRUB_FILE at it); it never goes in a repo.
+# One extended regex per line, case-insensitive, matched against every file git would commit (and commit messages with --history).
+# Put here whatever must never appear in the public core: your names, your handles, your clients, your domains, your private repo's name.
+# These lines are placeholders:
+your-first-name
+your-handle
+your-company\.example

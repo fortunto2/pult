@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Installed by `make hooks`: refuse a commit when the tree carries anything check-public rejects.
+exec "$(git rev-parse --show-toplevel)/scripts/check-public.sh"

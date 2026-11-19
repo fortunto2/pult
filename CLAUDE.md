@@ -10,20 +10,26 @@ Posts behind the design: https://rustman.org/wiki/control-bot/ and https://rustm
 2. **Live switches are D1 rows**, in `settings`, never `wrangler.toml` vars. A deploy from any checkout must not be able to flip one.
 3. **Scripts launchd or a running job executes are never edited in place.** Copy to `_work/`, edit, test, install over the original.
 4. **Nothing is sent in the owner's name except an explicit path.** Card buttons and replies to cards run in the `draft` workflow (read and draft, `dontAsk`, a fresh session, the quoted card as data). Do not add a send, pay, post or delete tool to any allow list.
-5. **A changed action is a changed contract.** `worker/contracts/actions.json`, `worker/src/contract.test.ts` and `tests/test_bot_item.py` change together.
-6. **Editing a live Telegram message passes `reply_markup` again**, or the keyboard disappears. `worker/src/tg.ts` and `render.ts` carry the rule; a test pins it.
-7. **Only the owner is answered.** The gate in `worker/index.ts` runs before any handler. A new command or callback never works around it; strangers get no reply at all, not even a courtesy line.
-8. **A schema change is a new file** under `worker/migrations/NNNN_name.sql`, additive, also folded into `worker/schema.sql` (the tests build their database from that file).
+5. **A changed action is a changed contract.** `worker/contracts/actions.json`, `worker/src/core/contract.test.ts` and `tests/test_bot_item.py` change together.
+6. **Editing a live Telegram message passes `reply_markup` again**, or the keyboard disappears. `worker/src/core/tg.ts` and `render.ts` carry the rule; a test pins it.
+7. **Only the owner is answered.** The gate in `worker/src/core/app.ts` runs before any handler. A new command or callback never works around it; strangers get no reply at all, not even a courtesy line.
+8. **A schema change is a new migration** appended to `worker/src/core/migrations.ts` (`core:NNNN_name`), additive, never an edit of a shipped one. `worker/schema.sql` is the frozen `core:0001_init`; `scripts/gen-schema.mjs` keeps its generated twin in sync (a test pins it).
+9. **Core changes are made here, in pult, and bumped in the private layer.** Personal names, ids, hosts and handles never enter this repo: `make check-public` runs on `make test`, and `make hooks` installs it as a pre-commit hook. The personal list lives outside the repo (`PULT_SCRUB_FILE`).
+10. **The extension API is semver.** `worker/src/lib.ts`, `pult.actions` and `pult.plugins` are the contract; a breaking change to a hook is a major version and a CHANGELOG line.
 
 ## Layout
 
 ```
-worker/index.ts        webhook, auth, routing, the hourly tick
-worker/src/            contract, fsm (pure state machine), store (D1), render (pure), tg, callbacks, replies,
+worker/src/index.ts    createApp() with no extensions; worker/src/lib.ts is the library surface for a private layer
+worker/src/core/app.ts createApp: webhook, auth, routing, the hourly tick, extension wiring; extension.ts is the hook contract
+worker/src/core/       contract, fsm (pure state machine), store (D1), render (pure), tg, callbacks, replies,
                        queue, sessions, sessions-api (runner routes), chat, api (/items), mdtg, settings, streams
-worker/schema.sql      the whole schema; wrangler.toml.example has the placeholders
-bin/                   pult-run, session-run, bot-item, bot-say, tg-channel, live-session, pult_config.py
-workflows.json         what each kind of run may do
+worker/src/core/miniapp/ initData checks, the read-only API, the page
+worker/examples/       the toy extension that docs/extending.md walks through (tested)
+worker/schema.sql      core:0001_init; wrangler.toml.example has the placeholders
+src/pult/              the Python package: paths, runner, session_run, actions (registry), plugins, items, say, channel
+bin/                   thin shims for the console scripts (README and launchd paths)
+src/pult/data/         workflows.json (what each kind of run may do) and agent-rules.txt
 tests/                 pytest: fake worker, fake claude; tests/integration: the real worker (INTEGRATION=1)
 ```
 

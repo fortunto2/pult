@@ -1,0 +1,5 @@
+# Known-fine matches of the generic rules: `path-regex<TAB>content-regex`, one reason per line above it.
+# Epoch seconds in test fixtures (10 digits look like a Telegram id).
+^tests/.*\.py$	(start|until|auth_date|now)[^0-9]{0,8}1[0-9]{9}
+# Ten-digit short ids of cards are hex-like strings in tests, digits only here.
+^worker/src/core/[a-z-]+\.test\.ts$	'0{10}'|'0123456789'

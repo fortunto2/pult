@@ -80,12 +80,11 @@ You need: a Cloudflare account (the free plan is enough), Node 22+, `uv`, Python
    cd worker
    npx wrangler d1 create pult                      # prints the database id
    cp wrangler.toml.example wrangler.toml           # fill in database_id, CHAT_ID, OWNER_TZ
-   npx wrangler d1 execute pult --remote --file=schema.sql
    npx wrangler secret put TELEGRAM_BOT_TOKEN
    npx wrangler secret put TG_SECRET                # any long random string
    npx wrangler secret put RUN_KEY                  # another one; the Mac sends it as a bearer key
    npx wrangler deploy
-   curl -H "Authorization: Bearer $RUN_KEY" https://<your-worker>.workers.dev/setup   # command menu + webhook
+   curl -H "Authorization: Bearer $RUN_KEY" https://<your-worker>.workers.dev/setup   # command menu, webhook, Mini App menu button; the database migrates itself on the first request
    ```
    Run one wrangler command at a time: two processes at once can invalidate the rotating OAuth login.
 3. **Mac.**
@@ -109,6 +108,26 @@ You need: a Cloudflare account (the free plan is enough), Node 22+, `uv`, Python
 - Env vars, all optional: `PULT_URL`, `PULT_HOME`, `PULT_WORK`, `PULT_STATE`, `PULT_CLAUDE` (argv prefix as JSON), `PULT_WORKFLOWS`, `PULT_SESSIONS_DIR`, `PULT_KEY_FILE`, `PULT_RUNNER_KEY_FILE`, `PULT_DENY_FILE`.
 - Voice notes are transcribed before the model sees them: set a command under `transcribers` in `workflows.json` (the example uses `mlx_whisper`).
 
+## A core with an extension layer
+
+pult is built to be extended without being forked. The worker is a library: `createApp({ extensions })`, where an extension adds routes, slash commands, button prefixes, scheduled handlers, queue actions, Mini App panels and its own migrations. The Mac side is a Python package whose runner loads plugin modules named in `PULT_PLUGINS`. Your private layer pins this repo as a git submodule at a tag and depends on it by path; core changes are made here first. See [docs/extending.md](docs/extending.md) (with a tested toy extension), [CHANGELOG.md](CHANGELOG.md) for versions and [ROADMAP.md](ROADMAP.md) for what is next.
+
+## Mini App
+
+`/app` opens a Mini App served by the worker itself (`/app/`): open cards with their buttons, sessions with last activity, queue depth and the usage-limit pause, recent runs, plus a tab for every panel an extension registers. It is read-only until you flip a switch in D1 (`/appwrite on`), which lets the app press a card's buttons.
+
+- **Auth.** Every API call carries Telegram's signed `initData`; the worker accepts the HMAC form (checked with your bot token) and the Ed25519 `signature` form (checked with Telegram's public key and the bot id, no token needed), within one hour, and only for the owner's user id. `MINIAPP_AUTH=hmac|ed25519|both` narrows it.
+- **Deep links.** `https://t.me/<bot>/<app>?startapp=card_<short>`, `session_<id>` or `panel_<id>` opens that card, session or tab.
+- **Same-origin rule (Bot API 10.2).** Mini App methods only work on the Mini App's own origin. The page is served from the worker, links out only to `https://` card sources in a new tab, and frames nothing; keep it that way and do not opt out of the hardening in BotFather.
+- Fullscreen and add-to-home-screen buttons show on clients that support them (8.0+).
+
+## Newer Telegram features, and how far they are tested
+
+- **Streamed progress.** The runner shows what Claude is doing as a streamed draft (`sendMessageDraft`) with a Stop button (`can_stop`); the answer is a normal message. The Stop button arrives as `stopped_message_generation` and acts like `/stop`. `PULT_PROGRESS=edit` (Mac) or `PROGRESS_DRAFTS=0` (worker) goes back to editing one message.
+- **Button colours.** Done is green, Not needed red, Later default; a card's running custom button is greyed out. `BUTTON_STYLES=0` and `BUTTON_DISABLED=0` turn them off.
+
+**Status: untested against a real Telegram client.** They are covered by tests against a stub and fall back on refusal, but the draft rate limits and the minimum client versions are unverified. Check on a phone before you rely on them. The rest (topics as sessions, rich messages) is in [ROADMAP.md](ROADMAP.md).
+
 ## Safety model
 
 - **Owner only.** The webhook checks the secret, then the sender's id and the chat id. Strangers, groups and bots are dropped before any handler runs, with no reply.
@@ -122,9 +141,10 @@ You need: a Cloudflare account (the free plan is enough), Node 22+, `uv`, Python
 
 ```bash
 make install        # worker deps, python env
-make test           # worker (node:test + tsc) and python (pytest), no network
+make test           # worker (node:test + tsc), python (pytest) and the public-tree scan, no network
 make integration    # the real worker under `wrangler dev --local`, a Telegram stub, the Mac scripts
 make lint           # ruff
+make check-public   # ids, hosts, keys and your own patterns (PULT_SCRUB_FILE); make hooks installs it as a pre-commit hook
 ```
 
 `make integration` downloads wrangler on first use and starts exactly one wrangler process.
@@ -133,7 +153,7 @@ make lint           # ruff
 
 - **Scheduled jobs.** Write your own scripts that decide what is worth your attention and call `bin/bot-item`. A job decides; the bot only shows. Run them from launchd or cron.
 - **Sending mail or messages.** Described above as a pattern, no code.
-- **A Mini App or read model** (a dashboard inside Telegram): a good next step.
+- **A personal read model** (your registry and to-do lists in the Mini App): the Mini App takes panels from an extension; the data is yours.
 - **Multi-user.** One owner. Access for other people is a different threat model.
 
 ## License
