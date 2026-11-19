@@ -532,3 +532,13 @@ def test_edit_mode_never_calls_the_draft_endpoint(env):
 def test_an_invalid_progress_mode_falls_back_to_draft(env, monkeypatch, capsys):
     monkeypatch.setenv("PULT_PROGRESS", "sparkles")
     assert sr.Cfg().progress_mode == "draft" and "not draft|edit" in capsys.readouterr().err
+
+
+def test_an_unchanged_draft_is_sent_again_every_keepalive_so_the_30_second_preview_does_not_vanish(env, monkeypatch):
+    w, run, _ = env
+    monkeypatch.setenv("PULT_PROGRESS", "draft")
+    monkeypatch.setenv("PULT_DRAFT_S", "0.05")
+    monkeypatch.setenv("PULT_KEEPALIVE_S", "0.3")
+    run([init(), text_block("Same words all along."), {"sleep": 1.3}, result("done")])
+    same = [x for x in drafts(w) if x["text"] == "Same words all along."]
+    assert len(same) >= 3                                                              # the one text, sent again about every 0.3 s while nothing changed

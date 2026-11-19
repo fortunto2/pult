@@ -4,6 +4,7 @@
     def wall() -> list[re.Pattern]             patterns an outgoing line or item must not match; raise pult.paths.DenyFileMissing when the wall
                                                cannot be loaded (every script then refuses to send: fail closed)
     def tz_label(tz: str) -> str | None        a short name for a zone in note headers ("CET" for Europe/Berlin); None keeps the city
+    def placeholders() -> dict[str, str]      extra {NAME} placeholders for workflows and rules ({BOT}, {CRM}); {PULT} and {WORK} are built in
     def agent_rules() -> str                   appended to the packaged agent rules a chat turn starts with
     def draft_rules() -> str                   appended to the rules of a restricted read-and-draft job
     def item_args(cmd: str, parser) -> None    add flags to one `bot-item` subcommand (decision, card, put)

@@ -70,12 +70,13 @@ class Cfg:
         self.heartbeat_s = float(e("HEARTBEAT_S", "20"))
         self.progress_s = float(e("PROGRESS_S", "5"))
         self.draft_s = float(e("PULT_DRAFT_S", "0.4"))
+        self.keepalive_s = float(e("PULT_KEEPALIVE_S", "15"))   # a Telegram draft is a 30 s preview: an unchanged text is sent again this often
         mode = e("PULT_PROGRESS", "draft").strip().lower()
         if mode not in ("draft", "edit"):
             print(f"PULT_PROGRESS={mode!r} is not draft|edit; using draft", file=sys.stderr)
             mode = "draft"
         self.progress_mode = mode
-        self.rules = cfgmod.fill("\n\n".join([cfgmod.data_text("agent-rules.txt").strip(), *hooks.collect("agent_rules")]))
+        self.rules = cfgmod.fill("\n\n".join([cfgmod.agent_rules_text().strip(), *hooks.collect("agent_rules")]))
 
     def load_workflows(self) -> dict:
         """The workflows file (packaged default or the PULT_WORKFLOWS override), plugin workflows merged over it. Read per event: edits apply on the next turn."""
@@ -206,9 +207,9 @@ class Progress:
 
     def show(self, text: str, *, force: bool = False) -> bool:
         """Show `text` now; draft updates closer than draft_s to the last one are dropped (the caller tries again on its next tick) unless forced."""
-        if not self.sid or text == self.last_text:
-            return False
         now = time.time()
+        if not self.sid or (text == self.last_text and not (self.mode == "draft" and now - self.last_draft >= self.cfg.keepalive_s)):
+            return False
         if self.mode == "draft":
             if not force and now - self.last_draft < self.cfg.draft_s:
                 return False
@@ -586,22 +587,25 @@ def build_registry(plugin_names: list[str] | None = None) -> Registry:
 def main_event(cfg: Cfg, ev: dict, registry: Registry | None = None) -> int:
     sid = ev.get("session_id")
     ack = lambda status, **kw: ack_event(cfg, ev, status, **kw)  # noqa: E731
-    sess = get_retry(cfg, f"/sessions/{sid}") if sid else None
-    if not sess or sess["user_id"] != ev["user_id"]:
+    registry = registry or build_registry()
+    action: Action | None = registry.get(ev.get("action"))
+    needs_session = action is None or action.session
+    sess = get_retry(cfg, f"/sessions/{sid}") if sid and needs_session else None
+    if needs_session and (not sess or sess["user_id"] != ev["user_id"]):
         ack("failed")   # never resume someone else's session; there is nowhere safe to answer
         print(f"refused: session {sid} does not belong to user {ev.get('user_id')}", file=sys.stderr)
         return 3
     if ev.get("role") != "owner":
-        say(cfg, sid, tr("run.non_owner"), reply_to=ev.get("reply_to"), loud=True)
+        if sid:
+            say(cfg, sid, tr("run.non_owner"), reply_to=ev.get("reply_to"), loud=True)
         ack("failed")
         return 3
-    registry = registry or build_registry()
-    action: Action | None = registry.get(ev.get("action"))
     if action is None:   # only registered actions run; anything else is refused, never guessed and never handed to the model
         ack("failed")
         print(f"refused: unknown action {ev.get('action')!r}", file=sys.stderr)
         say(cfg, sid, tr("run.unknown_action", action=ev.get("action")), reply_to=ev.get("reply_to"), loud=True)
         return 3
+    sess = sess or {"id": sid or ""}
     wfs = cfg.load_workflows()
     name = _workflow_name(ev, sess, action.workflow)
     if name == "draft" and "draft" not in wfs["workflows"]:
@@ -625,7 +629,7 @@ def main_event(cfg: Cfg, ev: dict, registry: Registry | None = None) -> int:
         say(cfg, sid, part, reply_to=reply if n == 0 else None, loud=res.loud and n == len(parts) - 1)
     kw = {"item_result": res.item_result} if res.item_result and action.item_result else {}
     ack(res.status, **kw)
-    return 1 if res.status == "failed" else 0
+    return res.exit_code if res.exit_code is not None else (1 if res.status == "failed" else 0)
 
 
 def _plugin_claude(ctx: Ctx, prompt: str) -> ActionResult:

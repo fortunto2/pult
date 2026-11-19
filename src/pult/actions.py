@@ -34,12 +34,14 @@ class ActionResult:
     say          the answer text, or None to post nothing
     item_result  done | reopen | None: what happens to the card the event came from. Honoured only when the action was registered with item_result=True
     loud         the last part of `say` rings the phone instead of arriving silently
+    exit_code    the runner's process exit code for this event; None = 0 for done/stopped/requeue, 1 for failed
     """
 
     status: str = "done"
     say: str | None = None
     item_result: str | None = None
     loud: bool = False
+    exit_code: int | None = None
 
     def __post_init__(self) -> None:
         if self.status not in STATUSES:
@@ -87,19 +89,20 @@ Handler = Callable[[dict, Ctx], "ActionResult | None"]
 
 @dataclass(frozen=True)
 class Action:
-    """One registered action. `workflow`: `chat` runs in the session's workflow (default chat), any other name runs in that workflow; an event with an item_id always runs in `draft`."""
+    """One registered action. `session=False`: the event needs no chat session (a deterministic job queued with session_id null); the handler gets an empty `sess`. `workflow`: `chat` runs in the session's workflow (default chat), any other name runs in that workflow; an event with an item_id always runs in `draft`."""
 
     name: str
     handler: Handler
     workflow: str = "draft"
     item_result: bool = False
+    session: bool = True
 
 
 class Registry:
     def __init__(self) -> None:
         self._actions: dict[str, Action] = {}
 
-    def register(self, name: str, handler: Handler, *, workflow: str = "draft", item_result: bool = False) -> Action:
+    def register(self, name: str, handler: Handler, *, workflow: str = "draft", item_result: bool = False, session: bool = True) -> Action:
         """Add an action. A name that is already registered is an error: an extension never silently replaces a core action or another extension's."""
         if not name or not isinstance(name, str):
             raise ValueError("an action needs a name")
@@ -107,7 +110,7 @@ class Registry:
             raise TypeError(f"action {name!r}: handler must be callable")
         if name in self._actions:
             raise ValueError(f"action {name!r} is already registered")
-        a = Action(name, handler, workflow, item_result)
+        a = Action(name, handler, workflow, item_result, session)
         self._actions[name] = a
         return a
 

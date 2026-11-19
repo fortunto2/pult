@@ -32,6 +32,12 @@ CONFIG_DIR = Path(os.environ.get("PULT_CONFIG_DIR") or Path.home() / ".config/pu
 UA = "pult/1"   # Cloudflare refuses the default Python-urllib agent (403)
 
 
+def agent_rules_text() -> str:
+    """The rules a chat turn starts with: PULT_AGENT_RULES (a file that replaces the packaged text) or the packaged agent-rules.txt."""
+    f = os.environ.get("PULT_AGENT_RULES")
+    return Path(f).expanduser().read_text() if f else data_text("agent-rules.txt")
+
+
 def data_text(name: str) -> str:
     """A file shipped inside the package (pult/data/<name>)."""
     return resources.files("pult").joinpath("data", name).read_text(encoding="utf-8")
@@ -84,7 +90,12 @@ def sessions_dir() -> Path:
 
 
 def fill(text: str) -> str:
-    """Write the placeholders out: {PULT} and {WORK} are single absolute paths."""
+    """Write the placeholders out: {PULT} and {WORK} are single absolute paths, plus whatever plugins' `placeholders()` name."""
+    from pult import hooks  # noqa: PLC0415  (hooks imports plugins imports paths)
+
+    for extra in hooks.collect("placeholders"):   # a plugin's own names, e.g. {BOT} or {CRM}; they win over the built-in two
+        for k, v in extra.items():
+            text = text.replace("{" + k + "}", str(v))
     return text.replace("{PULT}", str(PULT_HOME)).replace("{WORK}", str(WORK))
 
 

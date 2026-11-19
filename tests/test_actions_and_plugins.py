@@ -217,3 +217,27 @@ def test_tz_label_hook_names_a_zone(monkeypatch):
     assert items.tz_label("Europe/Berlin") == "Berlin"
     monkeypatch.setattr(hooks, "first", lambda name, *a: "CET" if name == "tz_label" and a == ("Europe/Berlin",) else None)
     assert items.tz_label("Europe/Berlin") == "CET" and items.tz_label("UTC") == "UTC"
+
+
+def test_a_session_less_action_runs_with_no_session_and_its_exit_code_is_the_runners(env):
+    w, run, _ = env
+    reg = Registry()
+    reg.register("job", lambda ev, ctx: ActionResult(status="failed", exit_code=3 if ctx.sess == {"id": ""} else 9), session=False)
+    ev = {"id": 7, "user_id": 111, "role": "owner", "session_id": None, "action": "job", "priority": 2, "lease_id": "L7"}
+    assert sr.main_event(sr.Cfg(), ev, reg) == 3
+    assert w.acks() == [{"status": "failed"}] and not [p for p in w.paths() if p.startswith("/sessions/")]   # no session lookup
+
+
+def test_a_plugin_names_extra_placeholders_and_agent_rules_can_come_from_a_file(tmp_path, monkeypatch):
+    from pult import paths
+
+    (tmp_path / "my_placeholders.py").write_text("def placeholders():\n    return {'BOT': '/b', 'CRM': '/c'}\n")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.setenv("PULT_PLUGINS", "my_placeholders")
+    assert paths.fill("python3 {BOT}/bin/x {CRM} {WORK}").startswith("python3 /b/bin/x /c ")
+    assert paths.expand_rules(["Read({BOT}/**)"]) == ["Read(/b/**)"]
+    (tmp_path / "rules.txt").write_text("Own rules.\n")
+    monkeypatch.setenv("PULT_AGENT_RULES", str(tmp_path / "rules.txt"))
+    assert paths.agent_rules_text() == "Own rules.\n"
+    monkeypatch.delenv("PULT_AGENT_RULES")
+    assert paths.agent_rules_text() == paths.data_text("agent-rules.txt")
