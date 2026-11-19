@@ -26,8 +26,8 @@ test('keyed answers its own credential; any other key still goes through the cor
 
 test('seen runs on every interactive pull before the pause, and a filter can query the db', async () => {
   const e = env(); seen.length = 0;
-  await enqueue(e.DB, { user_id: 1, session_id: 's1', text: 'hidden', priority: 0 }, 1);
-  await enqueue(e.DB, { user_id: 1, session_id: 's2', text: 'shown', priority: 0 }, 2);
+  await enqueue(e.DB, { user_id: 1, session_id: 's1', text: 'hidden', priority: 0 }, Date.now());
+  await enqueue(e.DB, { user_id: 1, session_id: 's2', text: 'shown', priority: 0 }, Date.now() + 1);
   const r = await (await call(e, '/events/pull', 'k', { slot: 'interactive' })).json() as { event: { text: string } };
   assert.deepEqual(seen, ['interactive']);
   assert.equal(r.event.text, 'shown');
