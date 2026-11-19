@@ -2,8 +2,9 @@
 
 Semantic versions. A core change is made here first; a private layer bumps its submodule to the tag. The extension API (`worker/src/lib.ts`, `pult.actions`, `pult.plugins`) follows semver: a breaking change to a hook is a major version. Anything under `worker/src/core/` that `lib.ts` does not export is internal and may change in a minor release.
 
-## Unreleased
+## 0.7.0 (2026-11-19)
 
+- A rejected-ack incident (`incident:ack:<event id>`) expires itself on the hourly tick once that event is `done`: the card has no cause left. `lib.ts` exports `applyExpire` so an extension can settle its own notices the same way.
 - `make release` refuses to tag a commit that is not on `origin/main` (`scripts/release-guard.sh`, tested): v0.6.3 was once tagged on a commit no branch held.
 - `docs/migration.md` removed: it was one private bot's plan for moving onto the core, of no use to someone starting fresh. The submodule workflow it held (core changes made in `core/`, the scrub hook there) is in `docs/extending.md`.
 

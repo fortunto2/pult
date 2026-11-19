@@ -20,7 +20,7 @@ export { S, setStrings, resetStrings, t } from './core/strings.ts';
 // Card layer, settings and drafts: what a private layer's extensions import (added with the first private extensions that needed them).
 export { ACTIONS, addActions } from './core/contract.ts';
 export type { ActionDef, Item, Kind, Urgency, State, Role, CustomAction } from './core/contract.ts';
-export { applyUnwork, applyWork, itemLog, setUrgency } from './core/store.ts';
+export { applyExpire, applyUnwork, applyWork, itemLog, setUrgency } from './core/store.ts';
 export { metaOf } from './core/roll.ts';
 export { groupOf } from './core/render.ts';
 export { streamOf } from './core/streams.ts';
