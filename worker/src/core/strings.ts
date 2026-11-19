@@ -6,6 +6,15 @@ export const DEFAULTS = {
   // -- card layer --
   // -- queue layer --
   // -- front --
+  start: 'Write a message and Claude answers. /help lists the commands.',
+  paused: 'The bot is not taking messages right now.',
+  appUnknown: 'The Mini App address is not known yet: call /setup once after the deploy.',
+  appBlurb: 'Cards, sessions, queue.',
+  appOpen: 'Open',
+  noOpen: 'No open cards.',
+  nothingSnoozed: 'Nothing snoozed.',
+  callbackFailed: 'failed',
+  menuTitle: 'Pult',
 } as const;
 
 export type StringKey = keyof typeof DEFAULTS;

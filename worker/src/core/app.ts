@@ -17,6 +17,7 @@ import { isQueuePath, sessionsRoute } from './sessions-api.ts';
 import { listItems } from './store.ts';
 import { grammyTg } from './tg.ts';
 import { ownerTz } from './tz.ts';
+import { S, setStrings } from './strings.ts';
 import { setEventColumns, type QEvent } from './queue.ts';
 
 const COMMANDS = [
@@ -45,7 +46,7 @@ export async function sameKey(given: string, want: string): Promise<boolean> {
   return d === 0;
 }
 
-export interface AppOptions<X> { extensions?: Extension<X>[] }
+export interface AppOptions<X> { extensions?: Extension<X>[]; /** user-facing sentences in your language; keys you leave out stay English (core/strings.ts) */ strings?: Record<string, string> }
 export interface App<X> {
   fetch(req: Request, env: Env & X): Promise<Response>;
   scheduled(e: ScheduledController, env: Env & X, ctx: ExecutionContext): Promise<void>;
@@ -54,6 +55,7 @@ export interface App<X> {
 export function createApp<X extends object = object>(opts: AppOptions<X> = {}): App<X> {
   const exts = opts.extensions ?? [];
   validate(exts as Extension<never>[]);
+  setStrings(opts.strings ?? {});
   setEventColumns(Object.assign({}, ...exts.map(e => e.eventColumns ?? {})));
   const migrations = [...CORE_MIGRATIONS, ...exts.flatMap(e => e.migrations ?? [])];
   const ready = new WeakMap<D1Database, Promise<string[]>>();   // once per isolate and database; a failed run is retried by the next request
@@ -86,7 +88,7 @@ export function createApp<X extends object = object>(opts: AppOptions<X> = {}): 
       }
       await next();
     });
-    b.command('start', ctx => ctx.reply('Write a message and Claude answers. /help lists the commands.'));
+    b.command('start', ctx => ctx.reply(S.start));
     b.command(['help', 'commands'], ctx => ctx.reply(help));
     b.command('status', async ctx => { await ctx.reply(await statusLine(env, Date.now(), tz)); });
     b.command('new', async ctx => { await ctx.reply((await cmdNew(env, owner, String(ctx.match ?? ''), Date.now(), tz)).text); });
@@ -97,8 +99,8 @@ export function createApp<X extends object = object>(opts: AppOptions<X> = {}): 
     b.command('stop', async ctx => { await ctx.reply(await cmdStop(env, owner, ctx.message?.reply_to_message?.message_id, Date.now(), tz)); });
     b.command('app', async ctx => {
       const url = await getSetting(env.DB, 'app:url');
-      if (!url) { await ctx.reply('The Mini App address is not known yet: call /setup once after the deploy.'); return; }
-      await ctx.reply('Cards, sessions, queue.', { reply_markup: { inline_keyboard: [[{ text: 'Open', web_app: { url: `${url}/app/` } }]] } });
+      if (!url) { await ctx.reply(S.appUnknown); return; }
+      await ctx.reply(S.appBlurb, { reply_markup: { inline_keyboard: [[{ text: S.appOpen, web_app: { url: `${url}/app/` } }]] } });
     });
     b.command('appwrite', async ctx => {
       const arg = String(ctx.match ?? '').trim().toLowerCase();
@@ -109,7 +111,7 @@ export function createApp<X extends object = object>(opts: AppOptions<X> = {}): 
     const list = (state: 'open' | 'snoozed') => async (ctx: Context) => {
       const now = Date.now();
       const items = (await listItems(env.DB, owner, { state, kind: 'decision' })).filter(i => state === 'open' ? i.state !== 'snoozed' : true).slice(0, 8);
-      if (!items.length) { await ctx.reply(state === 'open' ? 'No open cards.' : 'Nothing snoozed.'); return; }
+      if (!items.length) { await ctx.reply(state === 'open' ? S.noOpen : S.nothingSnoozed); return; }
       const line = (i: (typeof items)[number], n: number) => `${n + 1}. ${i.title}` + (state === 'snoozed' ? ` · until ${new Intl.DateTimeFormat('en-GB', { timeZone: tz, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(i.snooze_until ?? 0)}`
         : Math.floor((now - i.first_seen) / 86400e3) >= 1 ? ` · waiting ${Math.floor((now - i.first_seen) / 86400e3)} d` : '');
       const rows = items.filter(i => i.actions.includes('done')).map((i, n) => state === 'open'
@@ -133,7 +135,7 @@ export function createApp<X extends object = object>(opts: AppOptions<X> = {}): 
       if (ext) {
         const answer = async (text: string) => { await ctx.answerCallbackQuery({ text }).catch(() => undefined); };
         try { await ext.run({ ...ctxOf(env, ctx.api, now), data: data.slice(ext.prefix.length), queryId: ctx.callbackQuery.id, fromId: ctx.from.id, messageId: ctx.callbackQuery.message?.message_id, answer }); }
-        catch (e) { console.error(`callback ${ext.prefix} failed`, e); await answer('failed'); }
+        catch (e) { console.error(`callback ${ext.prefix} failed`, e); await answer(S.callbackFailed); }
         return;
       }
       await handleCallback(env.DB, tgOf(ctx.api), owner, { fromId: ctx.from.id, data, queryId: ctx.callbackQuery.id, name: ctx.from.first_name },
@@ -238,7 +240,7 @@ export function createApp<X extends object = object>(opts: AppOptions<X> = {}): 
         await api.setMyCommands([...COMMANDS, ...commands.map(c => ({ command: c.name, description: c.description.slice(0, 256) }))]);
         await api.setWebhook(`${u.origin}/tg`, { secret_token: env.TG_SECRET, allowed_updates: ['message', 'callback_query', 'stopped_message_generation'] });
         await putSetting(env.DB, 'app:url', u.origin);
-        await api.setChatMenuButton({ chat_id: Number(env.CHAT_ID), menu_button: { type: 'web_app', text: 'Pult', web_app: { url: `${u.origin}/app/` } } }).catch(() => undefined);
+        await api.setChatMenuButton({ chat_id: Number(env.CHAT_ID), menu_button: { type: 'web_app', text: S.menuTitle, web_app: { url: `${u.origin}/app/` } } }).catch(() => undefined);
         return Response.json({ ok: true, migrations: migrations.map(m => m.id) });
       }
       return new Response('not found', { status: 404 });

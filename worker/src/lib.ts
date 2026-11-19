@@ -13,3 +13,4 @@ export { reconcile } from './core/reconcile.ts';
 export { mdToTg } from './core/mdtg.ts';
 export { resolveSession } from './core/sessions.ts';
 export { validateInitData } from './core/miniapp/initdata.ts';
+export { S, setStrings, resetStrings, t } from './core/strings.ts';
