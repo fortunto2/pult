@@ -5,6 +5,7 @@ import { createApp } from '../src/lib.ts';
 import type { Env } from '../src/core/env.ts';
 import { signHmac } from '../src/core/miniapp/initdata.ts';
 import { makeDb } from '../src/core/testkit.ts';
+import { CORE_MIGRATIONS } from '../src/core/migrations.ts';
 import { telegramStub } from '../src/core/tgstub.ts';
 import { toy, type ToyEnv } from './toy.ts';
 
@@ -59,5 +60,5 @@ test('the migration ran after the core ones, once', async () => {
   const e = env();
   await hit(e, '/x/toy/count', { key: 'k' });
   const ids = (await e.DB.prepare('SELECT id FROM _migrations ORDER BY applied_at, rowid').all<{ id: string }>()).results.map(r => r.id);
-  assert.deepEqual(ids, ['core:0001_init', 'toy:0001_pings']);
+  assert.deepEqual(ids, [...CORE_MIGRATIONS.map(m => m.id), 'toy:0001_pings']);
 });

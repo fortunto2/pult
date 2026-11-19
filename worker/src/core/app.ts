@@ -18,7 +18,7 @@ import { listItems } from './store.ts';
 import { grammyTg } from './tg.ts';
 import { ownerTz } from './tz.ts';
 import { S, setStrings } from './strings.ts';
-import { setEventColumns, type QEvent } from './queue.ts';
+import { setEventColumns, setQueueHooks, type QEvent } from './queue.ts';
 
 const COMMANDS = [
   { command: 'new', description: 'new Claude session (until midnight)' },
@@ -57,6 +57,7 @@ export function createApp<X extends object = object>(opts: AppOptions<X> = {}): 
   validate(exts as Extension<never>[]);
   setStrings(opts.strings ?? {});
   setEventColumns(Object.assign({}, ...exts.map(e => e.eventColumns ?? {})));
+  setQueueHooks(exts.flatMap(e => (e.queue ? [e.queue] : [])));
   const migrations = [...CORE_MIGRATIONS, ...exts.flatMap(e => e.migrations ?? [])];
   const ready = new WeakMap<D1Database, Promise<string[]>>();   // once per isolate and database; a failed run is retried by the next request
   const ensure = (env: Env) => {

@@ -5,7 +5,8 @@ export type { AppCtx, Callback, CallbackCtx, Command, CommandCtx, Extension, Mig
 export type { Env } from './core/env.ts';
 export type { Tg } from './core/tg.ts';
 export type { Button, Markup } from './core/render.ts';
-export { enqueue } from './core/queue.ts';
+export { enqueue, pull, beat, finish, getEvent, recover } from './core/queue.ts';
+export type { QueueHooks, PullArgs } from './core/queue.ts';
 export { getSetting, putSetting, delSetting } from './core/settings.ts';
 export { listItems, getItem, getByShort, applyAction } from './core/store.ts';
 export { callbackData } from './core/render.ts';

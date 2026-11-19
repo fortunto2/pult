@@ -26,7 +26,7 @@ test('createApp refuses anything that would collide or escape its namespace, bef
 test('migrations: applied once, in order, core first; a failing one throws and is not recorded; a second run changes nothing', async () => {
   const db = makeDb();
   const ext = [{ id: 'x1:0001', sql: 'CREATE TABLE x1_a (n INTEGER)' }, { id: 'x1:0002', sql: ['ALTER TABLE x1_a ADD COLUMN m TEXT', 'INSERT INTO x1_a (n, m) VALUES (1, \'a\')'] }];
-  assert.deepEqual(await migrate(db, [...CORE_MIGRATIONS, ...ext]), ['core:0001_init', 'x1:0001', 'x1:0002']);
+  assert.deepEqual(await migrate(db, [...CORE_MIGRATIONS, ...ext]), [...CORE_MIGRATIONS.map(m => m.id), 'x1:0001', 'x1:0002']);
   assert.deepEqual(await migrate(db, [...CORE_MIGRATIONS, ...ext]), []);
   await assert.rejects(migrate(db, [{ id: 'x1:0003', sql: ['CREATE TABLE x1_b (n INTEGER)', 'THIS IS NOT SQL'] }]), /migration x1:0003 failed/);
   assert.equal(await db.prepare("SELECT name FROM sqlite_master WHERE name = 'x1_b'").first(), null, 'the batch rolled back whole');

@@ -2,10 +2,15 @@
 import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import type { Tg } from './tg.ts';
+import { CORE_MIGRATIONS, statements } from './migrations.ts';
 
 export function makeDb(): D1Database {
   const db = new DatabaseSync(':memory:');
   db.exec(readFileSync(new URL('../../schema.sql', import.meta.url), 'utf8'));
+  for (const m of CORE_MIGRATIONS.slice(1)) {   // core:0001 is schema.sql; the later ones are applied the way migrate() does, synchronously
+    for (const a of m.addColumns ?? []) if (!db.prepare(`SELECT 1 FROM pragma_table_info('${a.table}') WHERE name = ?`).get(a.column)) db.exec(`ALTER TABLE ${a.table} ADD COLUMN ${a.column} ${a.ddl}`);
+    for (const q of statements(m)) db.exec(q);
+  }
   const stmt = (sql: string, args: unknown[] = []) => {
     const s: any = {
       bind: (...a: unknown[]) => stmt(sql, a),

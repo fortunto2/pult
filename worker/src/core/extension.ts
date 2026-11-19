@@ -5,11 +5,11 @@ import type { Api } from 'grammy';
 import type { Update } from 'grammy/types';
 import type { Env } from './env.ts';
 import type { Markup, Button } from './render.ts';
-import type { QEvent } from './queue.ts';
+import type { QEvent, QueueHooks } from './queue.ts';
 import type { Migration } from './migrations.ts';
 import type { Tg } from './tg.ts';
 
-export type { Migration, QEvent, Markup, Button };
+export type { Migration, QEvent, Markup, Button, QueueHooks };
 
 /** What every hook receives. `env` is the core Env plus the extension's own bindings (the generic X). */
 export interface AppCtx<X = object> {
@@ -48,6 +48,7 @@ export interface Extension<X = object> {
   panels?: Panel<X>[];                            // Mini App sections; data comes from your own tables, never from the core's
   /** Updates from anyone but the owner (a family member, a group, a stranger) reach the core's gate first and are dropped. An extension that serves other people claims them here: return true when handled; false leaves them to be dropped. The core never answers non-owners itself. */
   outsiders?(ctx: AppCtx<X>, update: Update): Promise<boolean>;
+  queue?: QueueHooks;                              // slots of its own, filters on the core slots, lease length and ceiling, a recovery step, longer expiry for some events
   eventColumns?: Record<string, string | number | null>;   // values for extra columns your migrations added to `events` that have no default (written on every core insert)
   help?: string;                                  // a line appended to /help
 }
