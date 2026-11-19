@@ -37,3 +37,5 @@ export { localDate } from './core/tz.ts';
 export { sweepStreams } from './core/streams.ts';
 export { getProtected, setProtected, protectedToday } from './core/protected.ts';
 export { recentTaps } from './core/store.ts';
+export { grammyTg } from './core/tg.ts';
+export { itemsRoute } from './core/api.ts';

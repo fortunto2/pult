@@ -4,6 +4,8 @@ Semantic versions. A core change is made here first; a private layer bumps its s
 
 ## Unreleased
 
+- `lib.ts` also exports `grammyTg` and `itemsRoute` (a private layer builds a Tg for its own sends; tests drive the items route directly).
+
 - Session ages (`5 min`, `2 h`, `1 d`) go through the string table (`agoMin`, `agoHour`, `agoDay`); `locales/ru.ts` now covers every key of the table, queue, sessions and chat included.
 - `Extension.keyed(req, ctx)`: a second credential for part of the API (a device that may lease only its own events). `QueueHooks.seen(db, slot, now)` runs on each interactive/background pull before the pause check; `PullArgs.db` lets a filter or slot query D1. `upsertItem` and `Incoming` are exported from `lib.ts`.
 - `lib.ts` exports what private extensions import from the card layer: `ACTIONS`/`addActions`, `upsertItem`, `applyWork`/`applyUnwork`, `metaOf`, `groupOf`, `streamOf`, `configureCards`, the draft helpers, `withSettings`/`setFlag`/`flagOn`, `authenticate`/`authenticateUser`.
