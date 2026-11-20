@@ -1,3 +1,4 @@
+import { LIVE_FRESH_MS, LIVE_KEY } from './queue.ts';
 // Sessions: a conversation is a row pointing at a Claude session id. Addressing without topics: reply > the target you chose today > the day's main.
 export interface Session {
   id: string; user_id: number; title: string; claude_session_id: string | null; cwd: string | null; workflow: string;
@@ -23,8 +24,7 @@ export async function resolveSession(db: D1Database, userId: number, q: { replyT
     if (s) return { session: s, how: 'reply', created: false };
   }
   const day = dayKey(tz, now);
-  const t = await db.prepare('SELECT session_id FROM session_target WHERE user_id = ? AND day_key = ?').bind(userId, day).first<{ session_id: string }>();
-  const target = await forUser(db, userId, t?.session_id);
+  const target = await currentTarget(db, userId, now, tz);
   if (target) return { session: target, how: 'target', created: false };
   const had = await db.prepare('SELECT id FROM sessions WHERE user_id = ? AND day_key = ?').bind(userId, day).first();
   await db.prepare("INSERT OR IGNORE INTO sessions (id, user_id, title, created_at, last_active, day_key) VALUES (?,?,?,?,?,?)")
@@ -59,9 +59,17 @@ export async function setTarget(db: D1Database, userId: number, id: string, now:
   await db.prepare('INSERT INTO session_target (user_id, session_id, day_key) VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET session_id = excluded.session_id, day_key = excluded.day_key').bind(userId, id, dayKey(tz, now)).run();
   return true;
 }
-export async function targetOf(db: D1Database, userId: number, now: number, tz: string): Promise<Session | null> {
-  const t = await db.prepare('SELECT session_id FROM session_target WHERE user_id = ? AND day_key = ?').bind(userId, dayKey(tz, now)).first<{ session_id: string }>();
-  return forUser(db, userId, t?.session_id);
+export const targetOf = currentTarget;
+/** Today's target. A target chosen on an earlier day still holds while it is an ATTACHED live terminal session (its LIVE_SEEN row is fresh): the day changing under a running terminal must not move its messages to a new day's main. */
+async function currentTarget(db: D1Database, userId: number, now: number, tz: string): Promise<Session | null> {
+  const t = await db.prepare('SELECT session_id, day_key FROM session_target WHERE user_id = ?').bind(userId).first<{ session_id: string; day_key: string }>();
+  if (!t) return null;
+  const s = await forUser(db, userId, t.session_id);
+  if (!s) return null;
+  if (t.day_key === dayKey(tz, now)) return s;
+  if (s.workflow !== 'live') return null;
+  const seen = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(LIVE_KEY + s.id).first<{ value: string }>();
+  return seen && Number(seen.value) >= now - LIVE_FRESH_MS ? s : null;
 }
 export async function listSessions(db: D1Database, userId: number, limit = 8): Promise<Session[]> {
   return (await db.prepare("SELECT * FROM sessions WHERE user_id = ? AND status != 'archived' ORDER BY last_active DESC LIMIT ?").bind(userId, limit).all<Session>()).results;

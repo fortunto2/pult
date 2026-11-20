@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { cmdNew, cmdSessions, cmdStop, filesOf, inbound, MAX_FILE, statusLine, switchTo } from './chat.ts';
-import { pull } from './queue.ts';
+import { pull, recordLiveSeen } from './queue.ts';
 import { getSession, liveSession, recordMsg, resolveSession, setTarget } from './sessions.ts';
 import { setPause } from './settings.ts';
 import { makeDb } from './testkit.ts';
@@ -85,4 +85,18 @@ test('the live session is reused by title and becomes the target', async () => {
   assert.equal(a.id, b.id);
   assert.equal((await getSession(db, a.id))!.workflow, 'live');
   assert.equal((await resolveSession(db, U, {}, T, TZ)).session.id, a.id);
+});
+
+test('an attached live session stays the target across the day boundary; a dead or non-live target does not', async () => {
+  const db = makeDb();
+  const live = await liveSession(db, U, 'terminal', T, TZ);
+  const next = T + 24 * 3600e3;
+  await recordLiveSeen(db, live.id, next - 5000);   // the channel is polling
+  assert.equal((await resolveSession(db, U, {}, next, TZ)).session.id, live.id, 'still the live terminal after midnight');
+  const later = next + 3600e3;   // no pull for an hour: detached by itself
+  const m = await resolveSession(db, U, {}, later, TZ);
+  assert.equal(m.how, 'main');
+  assert.notEqual(m.session.id, live.id);
+  const plain = (await cmdNew({ DB: db }, U, 'r', T, TZ)).session;   // a /new target is a today-only choice
+  assert.notEqual((await resolveSession(db, U, {}, next, TZ)).session.id, plain.id);
 });
